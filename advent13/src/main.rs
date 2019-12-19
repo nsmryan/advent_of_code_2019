@@ -483,11 +483,29 @@ pub fn get_paddle_loc(map: &Map) -> (usize, usize) {
     panic!("Could not find paddle!?!?!?!");
 }
 
+pub fn won_game(map: &Map) -> bool {
+    for y in 0..map.len() {
+        for x in 0..map[0].len() {
+            if map[y][x] == 2 {
+                println!("Found block at ({}, {})", x, y);
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+pub fn wait_for_input() {
+    let mut string = String::new();
+    std::io::stdin().read_line(&mut string);
+}
+
 fn main() {
     /* Set Up Map */
     let mut int_code = IntCodeState::from_string(INPUT);
 
-    let mut map = vec![vec![0; 40]; 40];
+    let mut map = vec![vec![0; 35]; 25];
 
     let mut status = Status::Step;
 
@@ -512,31 +530,84 @@ fn main() {
 
     /* Play Game */
     let mut int_code = IntCodeState::from_string(INPUT);
+    let mut checkpoint_int_code = int_code.clone();
+    let mut checkpoint_map = map.clone();
     int_code.write_memory(0, 2);
 
     let mut status = Status::Step;
+    let mut paddle_setpoint = get_paddle_loc(&map);
+    let mut hit_checkpoint = false;
+    let mut prev_ball_loc = get_ball_loc(&map);
+    let mut final_score = 0;
     while status != Status::Exit {
         status = int_code.run();
 
         if status == Status::Blocked {
+            let score = read_output(&mut int_code, &mut map);
+            if score != 0 {
+                final_score = score;//std::cmp::max(score, final_score);
+            }
+
             let ball_loc = get_ball_loc(&map);
             let paddle_loc = get_paddle_loc(&map);
             let input;
-            if ball_loc.0 > paddle_loc.0 {
-                input = 1;
-            } else if ball_loc.0 < paddle_loc.0 {
-                input = -1;
+
+            let mut paddle_setpoint = ball_loc;
+            if ball_loc.1 > prev_ball_loc.1 {
+                paddle_setpoint.0 = 
+                    ((ball_loc.0 as isize - prev_ball_loc.0 as isize) + paddle_setpoint.0 as isize) as usize;
+            }
+
+            if paddle_loc.0 > paddle_setpoint.0 {
+                //if (paddle_loc.1 as isize - ball_loc.1 as isize).abs() == (paddle_loc.0 as isize - paddle_setpoint.0 as isize).abs() {
+                    input = -1;
+                //} else {
+                    //input = 0;
+                //}
+            } else if paddle_loc.0 < paddle_setpoint.0 {
+                //if (paddle_loc.1 as isize - ball_loc.1 as isize).abs() <= (paddle_loc.0 as isize - paddle_setpoint.0 as isize).abs() {
+                    input = 1;
+                //} else {
+                    //input = 0;
+                //}
             } else {
+                if ball_loc.1 < prev_ball_loc.1 && ball_loc.1 == (paddle_loc.1 - 2) {
+                    hit_checkpoint = true;
+                    checkpoint_int_code = int_code.clone();
+                    checkpoint_map = map.clone();
+                    //println!("Hit setpoint {}", paddle_setpoint.0);
+                    //wait_for_input();
+                }
+
                 input = 0;
             }
 
             int_code.input.push_front(input);
 
-            let score = read_output(&mut int_code, &mut map);
+            //clear_console();
+            //print_map(&map);
 
-            clear_console();
-            print_map(&map);
-            sleep(Duration::from_millis(100));
+            let paddle_loc = get_paddle_loc(&map);
+
+            println!("Score: {}", final_score);
+            //sleep(Duration::from_millis(10));
+
+            prev_ball_loc = ball_loc;
+        } else if status == Status::Exit {
+            final_score = read_output(&mut int_code, &mut map);
+            //if !won_game(&map) {
+            //    let current_paddle = get_paddle_loc(&map).0;
+            //    paddle_setpoint = get_ball_loc(&map);
+            //    int_code = checkpoint_int_code.clone();
+            //    map = checkpoint_map.clone();
+            //    prev_ball_loc = get_ball_loc(&map);
+            //    hit_checkpoint = false;
+            //    status = Status::Step;
+            //    println!("RESETTING ball was at {:?}, paddle was {}", paddle_setpoint.0, current_paddle);
+            //    wait_for_input();
+            //}
         }
     }
+
+    println!("Final Score: {}", final_score);
 }

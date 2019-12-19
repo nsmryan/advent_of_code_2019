@@ -150,7 +150,6 @@ pub fn prime_factors(num: usize) -> HashMap<usize, usize> {
     let up_bound = (num as f64).sqrt() as usize;
     for val in 2..=(num / 2) {
         if is_prime(val) {
-            //dbg!(val);
             if num % val == 0 {
                 if !factors.contains_key(&val) {
                     factors.insert(val, 0);
