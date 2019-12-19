@@ -121,27 +121,59 @@ pub fn parse_input(input: &str) -> HashMap<Chem, Vec<Vec<Chem>>> {
 fn main() {
     let chem_map = parse_input(INPUT);
 
-    let mut requirements = vec!(Chem { count: 1, name: "FUEL".to_string() });
-    let mut ore_cost = 0;
 
-    while requirements.len() > 0 {
-        let req = requirements.swap_remove(0).clone();
+    let mut avail: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
+    avail.insert("ORE".to_string(), vec!((1, 1)));
 
-        if let Some(input_lists) = chem_map.get(&req) {
-            let input_list = &input_lists[0];
-            for chem in input_list.iter() {
-                let mut req_chem = chem.clone();
-                req_chem.count *= req.count;
-                println!("req pushed = {:?}", req_chem.clone());
+    let mut changed = true;
+    while changed {
+        let chem_avail_names = avail.keys().map(|name| name.clone().to_string()).collect::<Vec<String>>();
+        
+        changed = false;
+        for (chem, input_lists) in chem_map.iter() {
+            for inputs in input_lists.iter() {
+                let all_avail =
+                    inputs.iter()
+                          .all(|in_chem| chem_avail_names.iter().any(|avail_name| in_chem.name == *avail_name));
 
-                if chem.name == "ORE" {
-                    ore_cost += req_chem.count;
+                if all_avail {
+                    let mut total_cost = 0;
+
+                    for req in inputs {
+                        let mut min_cost = 1000000000;
+
+                        for prod in avail.get(&req.name).unwrap().iter() {
+                            let cost;
+                            if req.count <= prod.0 {
+                                cost = prod.1
+                            } else if req.count % prod.0 == 0{
+                                cost = prod.1 * (req.count / prod.0);
+                            } else {
+                                cost = prod.1 * ((req.count / prod.0) + 1);
+                            }
+
+                            min_cost = std::cmp::min(min_cost, cost);
+                        }
+
+                        total_cost += min_cost;
+                    }
+
+                    if !avail.contains_key(&chem.name) {
+                        avail.insert(chem.name.clone(), Vec::new());
+                    }
+
+                    let new_prod = (chem.count, total_cost);
+                    let prod_list = avail.get_mut(&chem.name).unwrap();
+                    if !prod_list.contains(&new_prod) {
+                        prod_list.push(new_prod);
+                        changed = true;
+                    }
                 }
-
-                requirements.push(req_chem);
             }
         }
     }
 
-    println!("Total ORE cost: {}", ore_cost);
+    dbg!(&avail);
+
+    println!("Total ORE cost: {:?}", avail.get("FUEL").unwrap());
 }
