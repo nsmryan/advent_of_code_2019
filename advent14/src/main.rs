@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
 
 
 const INPUTS: [&str; 6] = [
@@ -122,7 +124,7 @@ const INPUTS: [&str; 6] = [
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Chem {
-    name: String,
+    name: u64,
     count: usize,
 }
 
@@ -133,7 +135,7 @@ impl Chem {
         let count = split.next().unwrap().parse::<usize>().unwrap();
         let name = split.next().unwrap().to_string();
 
-        return Chem { name, count };
+        return Chem { name: hash(&name), count };
     }
 }
 
@@ -160,10 +162,16 @@ pub fn parse_input(input: &str) -> HashMap<Chem, Vec<Chem>> {
          .collect::<Vec<(Chem, Vec<Chem>)>>();
 
     for pair in pairs {
-        chem_map.insert(pair.0.clone(), pair.1);
+        chem_map.insert(pair.0, pair.1);
     }
 
     return chem_map;
+}
+
+pub fn hash(string: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    string.hash(&mut hasher);
+    return hasher.finish();
 }
 
 fn main() {
@@ -173,22 +181,20 @@ fn main() {
 
     let mut productions = HashMap::new();
     for (chem, input) in chem_map {
-        productions.insert(chem.name.clone(), (chem.count, input));
+        productions.insert(chem.name, (chem.count, input));
     }
 
-    let mut requirements: HashMap<String, usize> = HashMap::new();
-    let mut leftovers: HashMap<String, usize> = HashMap::new();
+    let mut requirements: HashMap<u64, usize> = HashMap::new();
+    let mut leftovers: HashMap<u64, usize> = HashMap::new();
 
-    requirements.insert("FUEL".to_string(), 1);
+    requirements.insert(hash("FUEL"), 1);
     let mut ore_cost = 0;
 
     while requirements.len() > 0 {
         println!("Starting loop");
         let mut new_reqs = HashMap::new();
 
-        let mut req_vec = requirements.iter().map(|pair| (pair.0.clone(), pair.1.clone())).collect::<Vec<(String, usize)>>();
-
-        for (req_name, req_count_needed) in req_vec.iter() {
+        for (req_name, req_count_needed) in requirements.iter() {
             if let Some((chem_count, input)) = productions.get(req_name) {
                 let mut count_needed = *req_count_needed;
                 if leftovers.contains_key(req_name) {
@@ -213,19 +219,19 @@ fn main() {
 
                 let leftover = prod_times * chem_count - count_needed;
                 if leftover > 0 {
-                    leftovers.insert(req_name.clone(), leftover);
+                    leftovers.insert(*req_name, leftover);
                 }
 
                 println!("Discharging {}, prod {} times", req_name, prod_times);
                 for in_chem in input.iter() {
                     if !new_reqs.contains_key(&in_chem.name) {
-                        new_reqs.insert(in_chem.name.clone(), 0);
+                        new_reqs.insert(in_chem.name, 0);
                     }
                     let count = new_reqs.get_mut(&in_chem.name).unwrap();
                     *count += in_chem.count * prod_times;
                 }
             } else {
-                if req_name != "ORE" {
+                if *req_name != hash("ORE") {
                     panic!();
                 }
                 ore_cost += req_count_needed;
@@ -239,7 +245,7 @@ fn main() {
 
     let leftover_per_iter = leftovers.clone();
 
-    let mut requirements: HashMap<String, usize> = HashMap::new();
+    let mut requirements: HashMap<u64, usize> = HashMap::new();
 
     let mut ore_left: i64 = 1000000000000;
     let mut num_fuel = 0;
@@ -334,7 +340,7 @@ fn main() {
     }
     */
 
-    let mut requirements: HashMap<String, usize> = HashMap::new();
+    let mut requirements: HashMap<u64, usize> = HashMap::new();
     let mut num_iters = 0;
     'ore_left_label: while ore_left > 0 {
         if num_iters % 1000000 == 0 {
@@ -342,7 +348,7 @@ fn main() {
         }
         num_iters += 1;
         requirements.clear();
-        requirements.insert("FUEL".to_string(), 1);
+        requirements.insert(hash("FUEL"), 1);
         while requirements.len() > 0 {
             let mut new_reqs = HashMap::new();
 
@@ -367,12 +373,12 @@ fn main() {
                             }
                         }
 
-                        if req_name == "FUEL" {
+                        if *req_name == hash("FUEL") {
                             num_fuel += chem_count * amount_to_make;
                             //println!("Made fuel");
                         } else {
                             if !leftovers.contains_key(req_name) {
-                                leftovers.insert(req_name.clone(), 0);
+                                leftovers.insert(*req_name, 0);
                             }
                             let leftover_count = leftovers.get_mut(req_name).unwrap();
                             *leftover_count += chem_count * amount_to_make;
@@ -391,7 +397,7 @@ fn main() {
                                     prod_times += 1;
                                 }
 
-                                if in_chem.name == "ORE" {
+                                if in_chem.name == hash("ORE") {
                                     let mut prod_times = prod_times;
                                     if ore_left < (prod_times * in_chem.count) as i64 {
                                         prod_times = 1;
@@ -402,7 +408,7 @@ fn main() {
 
                                     ore_left -= (prod_times * in_chem.count) as i64;
                                     if !leftovers.contains_key(req_name) {
-                                        leftovers.insert(req_name.clone(), 0);
+                                        leftovers.insert(*req_name, 0);
                                     }
                                     let leftover_count = leftovers.get_mut(req_name).unwrap();
                                     *leftover_count += prod_times * chem_count;
@@ -411,14 +417,14 @@ fn main() {
                                         let current_count = new_reqs.get_mut(&in_chem.name).unwrap();
                                         *current_count += prod_times * in_chem.count;
                                     } else {
-                                        new_reqs.insert(in_chem.name.clone(), prod_times * in_chem.count);
+                                        new_reqs.insert(in_chem.name, prod_times * in_chem.count);
                                     }
                                 }
                             }
                         }
                     }
                 } else {
-                    if req_name != "ORE" {
+                    if *req_name != hash("ORE") {
                         panic!();
                     }
                 }
