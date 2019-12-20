@@ -588,6 +588,10 @@ fn main() {
         iterations += 1;
     }
 
+    if oxygen_loc == (0, 0) {
+        panic!("Never found the oxygen tile!");
+    }
+
     //clear_console();
     print_map(&map, (0, 0));
     println!("");
@@ -620,4 +624,51 @@ fn main() {
     } else {
         println!("No path was found!");
     }
+
+    let mut oxy_tiles = HashSet::new();
+    oxy_tiles.insert(oxygen_loc);
+
+
+    let mut changed = true;
+    let mut num_iterations = 0;
+    while changed {
+
+        let mut new_oxy_tiles = HashSet::new();
+        changed = false;
+        for p in oxy_tiles.iter() {
+            new_oxy_tiles.insert(*p);
+
+            if map[p.1][p.0 - 1] != Tile::Wall && 
+               !oxy_tiles.contains(&(p.0 - 1, p.1)) {
+                new_oxy_tiles.insert((p.0 - 1, p.1));
+                changed = true;
+            }
+            if map[p.1][p.0 + 1] != Tile::Wall &&
+               !oxy_tiles.contains(&(p.0 + 1, p.1)) {
+                new_oxy_tiles.insert((p.0 + 1, p.1));
+                changed = true;
+            }
+            if map[p.1 - 1][p.0] != Tile::Wall &&
+               !oxy_tiles.contains(&(p.0, p.1 - 1)) {
+                new_oxy_tiles.insert((p.0, p.1 - 1));
+                changed = true;
+            }
+            if map[p.1 + 1][p.0] != Tile::Wall &&
+               !oxy_tiles.contains(&(p.0, p.1 + 1)) {
+                new_oxy_tiles.insert((p.0, p.1 + 1));
+                changed = true;
+            }
+        }
+
+        oxy_tiles = new_oxy_tiles;
+
+        num_iterations += 1;
+
+        println!("num iterations: {}", num_iterations);
+    }
+
+    // we overcount by one in the above loop!
+    num_iterations -= 1;
+
+    println!("Minutes till oxygenated = {}", num_iterations);
 }
