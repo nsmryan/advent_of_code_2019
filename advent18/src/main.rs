@@ -399,22 +399,18 @@ impl Solver {
                 println!("solver cost = {}, iteration {}, num left = {}", current_cost, iter, self.solutions.len());
             }
 
-            let mut solution_at_current_cost = false;
-
             if let Some(solutions) = self.solutions.remove(&current_cost) {
                 if iter % 100 == 0 {
                     println!("iter {}", iter);
                 }
-                for mut solution in solutions {
-                    //print!(".");
-
-                    solution_at_current_cost = true;
+                let new_solutions = solutions.into_par_iter().map(|mut solution| {
                     if let Some(goal) = solution.goal {
                         solution.reach_goal(map);
                     }
 
                     let new_goals = solution.generate_goals(map);
-                    //println!("new goals = {:?}", new_goals);
+
+                    let mut new_solutions = Vec::new();
 
                     if new_goals.len() > 0 && solution.keys.len() > 0 {
                         for new_goal in new_goals {
@@ -423,22 +419,34 @@ impl Solver {
 
                             let solution_hash = new_solution.hashed();
                             if !self.seen.contains(&solution_hash) {
-                                self.seen.insert(solution_hash);
-
-                                if !self.solutions.contains_key(&new_solution.steps) {
-                                    self.solutions.insert(new_solution.steps, Vec::new());
-                                }
-
-                                let sol_vec = self.solutions.get_mut(&new_solution.steps).unwrap();
-                                sol_vec.push(new_solution);
+                                new_solutions.push(new_solution);
                             }
                         }
-                    } else { // no new goals- solution is finished!
-                        return solution.steps;
                     }
+
+                    return new_solutions;
+                })
+                .flatten()
+                .collect::<Vec<Solution>>();
+
+                for new_solution in new_solutions {
+                    let solution_hash = new_solution.hashed();
+
+                    self.seen.insert(solution_hash);
+
+                    if new_solution.keys.len() == 0 {
+                        return new_solution.steps;
+                    }
+
+                    if !self.solutions.contains_key(&new_solution.steps) {
+                        self.solutions.insert(new_solution.steps, Vec::new());
+                    }
+
+                    let sol_vec = self.solutions.get_mut(&new_solution.steps).unwrap();
+                    sol_vec.push(new_solution);
                 }
-                //println!("");
-                   
+
+
                 iter += 1;
             } else {
                 current_cost += 1;
