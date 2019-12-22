@@ -331,20 +331,20 @@ impl Solution {
                 }
                   */
             } else {
-                panic!("No path to goal!");
+                panic!("no path to goal!");
             }
         } else {
             panic!("Asked to reach goal when no goal is present!");
         }
     }
 
-    pub fn generate_goals(&self, map: &Map) -> Vec<Loc> {
+    pub fn generate_goals(&self, paths: &HashMap<(Loc, Loc), Vec<Loc>>, map: &Map) -> Vec<Loc> {
         let mut new_goals = Vec::new();
         
         for (key_loc, key_ch) in self.keys.iter() {
             let mut hit_door = false;
             let mut hit_key = false;
-            if let Some((path, _)) = self.path_to(map, self.loc, *key_loc) {
+            if let Some(path) = paths.get(&(self.loc, *key_loc)) {
                 let up_to = path.len();
                 for path_loc in path.iter().take(up_to) {
                     if let Some(door_ch) = self.door_at_loc(*path_loc) {
@@ -363,6 +363,8 @@ impl Solution {
                         }
                     }
                 }
+            } else {
+                panic!(format!("No path? {:?} {:?}", self.loc, key_loc));
             }
 
             if !hit_key && (!hit_door || self.path_no_doors(map, self.loc, *key_loc).is_some()) {
@@ -412,12 +414,27 @@ impl Solution {
 pub struct Solver {
     seen: HashMap<u64, usize>,
     solutions: HashMap<Cost, Vec<Solution>>,
+    paths: HashMap<(Loc, Loc), Vec<Loc>>,
 }
 
 impl Solver {
-    pub fn new(initial_solution: Solution) -> Solver {
+    pub fn new(initial_solution: Solution, map: &Map) -> Solver {
         let mut seen = HashMap::new();
         let mut solutions = HashMap::new();
+        let mut paths = HashMap::new();
+
+        for (key_loc, _) in initial_solution.keys.iter() {
+            for (other_key_loc, _) in initial_solution.keys.iter() {
+                if key_loc != other_key_loc {
+                    if let Some((path, _)) = initial_solution.path_to(map, *key_loc, *other_key_loc) {
+                        paths.insert((*key_loc, *other_key_loc), path);
+                    }
+                }
+            }
+            if let Some((path, _)) = initial_solution.path_to(map, initial_solution.loc, *key_loc) {
+                paths.insert((initial_solution.loc, *key_loc), path);
+            }
+        }
 
         seen.insert(initial_solution.hashed(), 0);
         solutions.insert(0, vec!(initial_solution));
@@ -425,6 +442,7 @@ impl Solver {
         return Solver {
             seen,
             solutions,
+            paths,
         };
     }
 
@@ -436,36 +454,46 @@ impl Solver {
         let mut solutions_looked_at = 0;
 
         while self.solutions.len() > 0 {
-            println!("solver cost = {:3}, left = {:6}, looked at {:6}",
-                     current_cost, self.solutions.len(), solutions_looked_at);
+            println!("solver cost = {:3}, looked at {:6}",
+                     current_cost, solutions_looked_at);
 
             if let Some(solutions) = self.solutions.remove(&current_cost) {
+
+                for solution in solutions.iter() {
+                    if solution.keys.len() == 0 {
+                        return solution.steps;
+                    }
+                }
+
                 if iter % 100 == 0 {
                     println!("iter {}", iter);
                 }
-                //println!("{:?}", &solutions);
-                let new_solutions = solutions.into_iter().map(|mut solution| {
+                println!("{:4} solutions removed", solutions.len());
+                let new_solutions = solutions.into_par_iter().map(|mut solution| {
                     if let Some(goal) = solution.goal {
                         solution.reach_goal(map);
                     }
 
-                    let new_goals = solution.generate_goals(map);
+                    let new_goals = solution.generate_goals(&self.paths, map);
 
                     let mut new_solutions = Vec::new();
 
                     if solution.keys.len() == 0 {
-                        //println!("Found solution");
                         new_solutions.push(solution.clone());
                     }
-                    //println!("new goals: {}", new_goals.len());
 
-                    if new_goals.len() > 0 && solution.keys.len() > 0 {
+                    if new_goals.len() > 0 && 
+                       solution.keys.len() > 0 {
                         for new_goal in new_goals {
                             let mut new_solution = solution.clone();
                             new_solution.goal = Some(new_goal);
 
                             let solution_hash = new_solution.hashed();
-                            new_solutions.push(new_solution);
+
+                            if !self.seen.contains_key(&solution_hash) ||
+                               *self.seen.get(&solution_hash).unwrap() > new_solution.steps {
+                                new_solutions.push(new_solution);
+                            }
                         }
                     }
 
@@ -474,6 +502,7 @@ impl Solver {
                 .flatten()
                 .collect::<Vec<Solution>>();
 
+                println!("{:4} new solutions", new_solutions.len());
                 for new_solution in new_solutions {
                     if PRINT {
                         new_solution.print(map);
@@ -482,11 +511,6 @@ impl Solver {
                     let solution_hash = new_solution.hashed();
 
                     solutions_looked_at += 1;
-
-                    if new_solution.keys.len() == 0 {
-                        return new_solution.steps;
-                    }
-
 
                     if !self.seen.contains_key(&solution_hash) ||
                         *self.seen.get(&solution_hash).unwrap() > new_solution.steps {
@@ -582,7 +606,7 @@ fn main() {
             goal: None,
     };
 
-    let mut solver = Solver::new(initial_solution);
+    let mut solver = Solver::new(initial_solution, &map);
 
     println!("Min steps: {}", solver.solve(&map));
 }
