@@ -8,7 +8,9 @@ use pathfinding::directed::astar::astar;
 use rayon::prelude::*;
 
 
-const IX: usize = 1;
+const PRINT: bool = false;
+
+const IX: usize = 5;
 
 const INPUT: [&str; 6] = [
 "#########
@@ -156,7 +158,7 @@ pub struct Map {
     tiles: Vec<Vec<Tile>>,
 }
 
-#[derive(Clone, Hash, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Solution {
     steps: usize,
     loc: Loc,
@@ -164,6 +166,16 @@ pub struct Solution {
     keys: Vec<(Loc, char)>,
     doors: Vec<(Loc, char)>,
     goal: Option<Loc>,
+}
+
+impl Hash for Solution {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.loc.hash(state);
+        self.collected.hash(state);
+        self.keys.hash(state);
+        self.doors.hash(state);
+        self.goal.hash(state);
+    }
 }
 
 impl Solution {
@@ -212,35 +224,42 @@ impl Solution {
         }
     }
 
+    pub fn path_to(&self, map: &Map, start: Loc, end: Loc) -> Option<(Vec<Loc>, Cost)> {
+        let path =
+            astar(&start, 
+                  |p| {
+                      let mut sucs = Vec::new();
+                      if map.tiles[p.1 - 1][p.0] == Tile::Empty {
+                          sucs.push(((p.0, p.1 - 1), 1));
+                      }
+                      if map.tiles[p.1 + 1][p.0] == Tile::Empty {
+                          sucs.push(((p.0, p.1 + 1), 1));
+                      }
+                      if map.tiles[p.1][p.0 + 1] == Tile::Empty {
+                          sucs.push(((p.0 + 1, p.1), 1));
+                      }
+                      if map.tiles[p.1][p.0 - 1] == Tile::Empty {
+                          sucs.push(((p.0 - 1, p.1), 1));
+                      }
+
+                      return sucs;
+                  },
+                  |p| {
+                      ((p.0 as i32 - end.0 as i32).pow(2) + 
+                      (p.1 as i32 - end.1 as i32).pow(2)) as usize
+
+                  },
+                  |p| {
+                      *p == end
+                  });
+
+        return path;
+    }
+
     pub fn reach_goal(&mut self, map: &Map) {
         if let Some(goal) = self.goal {
-            let path =
-                astar(&self.loc, 
-                      |p| {
-                          let mut sucs = Vec::new();
-                          if map.tiles[p.1 - 1][p.0] == Tile::Empty {
-                              sucs.push(((p.0, p.1 - 1), 1));
-                          }
-                          if map.tiles[p.1 + 1][p.0] == Tile::Empty {
-                              sucs.push(((p.0, p.1 + 1), 1));
-                          }
-                          if map.tiles[p.1][p.0 + 1] == Tile::Empty {
-                              sucs.push(((p.0 + 1, p.1), 1));
-                          }
-                          if map.tiles[p.1][p.0 - 1] == Tile::Empty {
-                              sucs.push(((p.0 - 1, p.1), 1));
-                          }
 
-                          return sucs;
-                      },
-                      |p| {
-                          ((p.0 as i32 - goal.0 as i32).pow(2) + 
-                          (p.1 as i32 - goal.1 as i32).pow(2)) as usize
-
-                      },
-                      |p| {
-                          *p == goal
-                      });
+            let path = self.path_to(map, self.loc, goal);
 
             if let Some((_, cost)) = path {
                 //println!("Reached goal (cost = {})!", cost);
@@ -332,7 +351,26 @@ impl Solution {
             }
         }
 
-        return new_goals;
+        let mut final_goals = Vec::new();
+
+        for goal in new_goals {
+            if let Some((path, _)) = self.path_to(map, self.loc, goal) {
+                let mut hits_key = false;
+                let up_to = path.len() - 2;
+                for loc in path.iter().take(up_to) {
+                    if self.key_at_loc(*loc).is_some() {
+                        hits_key = true;
+                        break;
+                    }
+                }
+
+                if !hits_key {
+                    final_goals.push(goal);
+                }
+            }
+        }
+
+        return final_goals;
     }
 
     pub fn print(&self, map: &Map) {
@@ -371,16 +409,16 @@ impl Solution {
 }
 
 pub struct Solver {
-    seen: HashSet<u64>,
+    seen: HashMap<u64, usize>,
     solutions: HashMap<Cost, Vec<Solution>>,
 }
 
 impl Solver {
     pub fn new(initial_solution: Solution) -> Solver {
-        let mut seen = HashSet::new();
+        let mut seen = HashMap::new();
         let mut solutions = HashMap::new();
 
-        seen.insert(initial_solution.hashed());
+        seen.insert(initial_solution.hashed(), 0);
         solutions.insert(0, vec!(initial_solution));
 
         return Solver {
@@ -394,9 +432,12 @@ impl Solver {
 
         let mut iter = 0;
 
+        let mut solutions_looked_at = 0;
+
         while self.solutions.len() > 0 {
-            if current_cost % 100 == 0 {
-                println!("solver cost = {}, iteration {}, num left = {}", current_cost, iter, self.solutions.len());
+            if current_cost % 10 == 0 {
+                println!("solver cost = {:3}, left = {:6}, looked at {:6}",
+                         current_cost, self.solutions.len(), solutions_looked_at);
             }
 
             if let Some(solutions) = self.solutions.remove(&current_cost) {
@@ -422,7 +463,7 @@ impl Solver {
                             new_solution.goal = Some(new_goal);
 
                             let solution_hash = new_solution.hashed();
-                            if !self.seen.contains(&solution_hash) {
+                            if !self.seen.contains_key(&solution_hash) {
                                 new_solutions.push(new_solution);
                             }
                         }
@@ -434,12 +475,17 @@ impl Solver {
                 .collect::<Vec<Solution>>();
 
                 for new_solution in new_solutions {
-                    new_solution.print(map);
+                    if PRINT {
+                        new_solution.print(map);
+                    }
 
                     let solution_hash = new_solution.hashed();
 
-                    if !self.seen.contains(&solution_hash) {
-                        self.seen.insert(solution_hash);
+                    solutions_looked_at += 1;
+
+                    if !self.seen.contains_key(&solution_hash) ||
+                        *self.seen.get(&solution_hash).unwrap() > new_solution.steps {
+                        self.seen.insert(solution_hash, new_solution.steps);
 
                         if new_solution.keys.len() == 0 {
                             return new_solution.steps;
