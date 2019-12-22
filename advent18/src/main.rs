@@ -299,58 +299,31 @@ impl Solution {
 
     pub fn generate_goals(&self, map: &Map) -> Vec<Loc> {
         let mut new_goals = Vec::new();
-        let mut seen_locs = HashSet::new();
         let mut next_locs = Vec::new();
-        let mut any_keys = false;
 
         next_locs.push(self.loc);
         
-        while next_locs.len() > 0 {
-            let current_loc = next_locs.swap_remove(0);
-
-            seen_locs.insert(current_loc);
-
-            // contains un-picked-up key
-            if let Some(_) = self.keys.iter().position(|(loc, ch)| *loc == current_loc) {
-                new_goals.push(current_loc);
-                any_keys = true;
-            }
-
-            // contains door which we can currently open
-            if let Some(door_ix) = self.doors.iter().position(|(loc, ch)| *loc == current_loc) {
-                if let Some(_) = self.collected.iter().position(|key_ch| {
-                    return self.doors[door_ix].1.to_lowercase().next().unwrap() == *key_ch;
-                }) {
-                    new_goals.push(current_loc);
+        for (key_loc, key_ch) in self.keys.iter() {
+            let mut hit_door = false;
+            if let Some((path, _)) = self.path_to(map, self.loc, key_loc) {
+                let up_to = path.len() - 1;
+                for path_loc in path.iter().take(up_to) {
+                    if let Some(door_ch) = self.door_at_loc(path_loc) {
+                        if self.collected.position(|col_key| 
+                            col_key == door_ch.to_lowercase().next().unwrap()).is_none() {
+                            new_goals.push(path_loc);
+                            hit_door = true;
+                        }
+                    }
                 }
-
-                // we can't walk on this square, so don't look at neighbors
-                continue;
             }
 
-            let up = Dir::North.move_dir(current_loc);
-            let down = Dir::South.move_dir(current_loc);
-            let left = Dir::West.move_dir(current_loc);
-            let right = Dir::East.move_dir(current_loc);
-
-            if !seen_locs.contains(&up) &&
-               map.tiles[up.1][up.0] == Tile::Empty {
-                next_locs.push(up);
-            }
-            if !seen_locs.contains(&down) &&
-               map.tiles[down.1][down.0] == Tile::Empty {
-                next_locs.push(down);
-            }
-            if !seen_locs.contains(&left) &&
-               map.tiles[left.1][left.0] == Tile::Empty {
-                next_locs.push(left);
-            }
-            if !seen_locs.contains(&right) &&
-               map.tiles[right.1][right.0] == Tile::Empty {
-                next_locs.push(right);
+            if !hit_door {
+                new_goals.push(key_loc);
             }
         }
 
+        /*
         let mut final_goals = Vec::new();
 
         for goal in new_goals {
@@ -371,6 +344,9 @@ impl Solution {
         }
 
         return final_goals;
+        */
+
+        return new_goals;
     }
 
     pub fn print(&self, map: &Map) {
