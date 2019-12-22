@@ -292,7 +292,7 @@ impl Solution {
         return path;
     }
 
-    pub fn reach_goal(&mut self, map: &Map) {
+    pub fn reach_goal(&mut self, map: &Map) -> Cost {
         if let Some(goal) = self.goal {
 
             let path = self.path_to(map, self.loc, goal);
@@ -330,6 +330,7 @@ impl Solution {
                     }
                 }
                   */
+                return cost;
             } else {
                 panic!("no path to goal!");
             }
@@ -354,8 +355,8 @@ impl Solution {
                             //println!("Adding door {}, with key {}", door_ch, col_ch);;
                             //new_goals.push(*path_loc);
                             hit_door = true;
+                            break;
                         }
-                        break;
                     } else if let Some(other_key_ch) = self.key_at_loc(*path_loc) {
                         if *key_ch != other_key_ch {
                             hit_key = true;
@@ -411,16 +412,23 @@ impl Solution {
     }
 }
 
+pub fn distance(loc0: Loc, loc1: Loc) -> usize {
+    ((loc0.0 as i32 - loc0.0 as i32).abs() +
+    (loc1.1 as i32 - loc1.1 as i32).abs()) as usize
+    //self.paths.get(&(*loc, *other_loc)).unwrap().len();
+}
+
 pub struct Solver {
-    seen: HashMap<u64, usize>,
-    solutions: HashMap<Cost, Vec<Solution>>,
+    //seen: HashMap<u64, usize>,
+    //solutions: HashMap<Cost, Vec<Solution>>,
+    initial: Solution,
     paths: HashMap<(Loc, Loc), Vec<Loc>>,
 }
 
 impl Solver {
     pub fn new(initial_solution: Solution, map: &Map) -> Solver {
-        let mut seen = HashMap::new();
-        let mut solutions = HashMap::new();
+        //let mut seen = HashMap::new();
+        //let mut solutions = HashMap::new();
         let mut paths = HashMap::new();
 
         for (key_loc, _) in initial_solution.keys.iter() {
@@ -434,108 +442,124 @@ impl Solver {
             if let Some((path, _)) = initial_solution.path_to(map, initial_solution.loc, *key_loc) {
                 paths.insert((initial_solution.loc, *key_loc), path);
             }
+            if let Some((path, _)) = initial_solution.path_to(map, *key_loc, initial_solution.loc) {
+                paths.insert((*key_loc, initial_solution.loc), path);
+            }
         }
 
-        seen.insert(initial_solution.hashed(), 0);
-        solutions.insert(0, vec!(initial_solution));
+        //seen.insert(initial_solution.hashed(), 0);
+        //solutions.insert(0, vec!(initial_solution));
 
         return Solver {
-            seen,
-            solutions,
+            //seen,
+            //solutions,
+            initial: initial_solution,
             paths,
         };
     }
 
     pub fn solve(&mut self, map: &Map) -> Cost {
-        let mut current_cost = 0;
 
-        let mut iter = 0;
+        let path =
+            astar(&self.initial, 
+                  |solution| {
+                      //let mut sucs = Vec::new();
 
-        let mut solutions_looked_at = 0;
+                      let new_goals = solution.generate_goals(&self.paths, map);
 
-        while self.solutions.len() > 0 {
-            println!("solver cost = {:3}, looked at {:6}",
-                     current_cost, solutions_looked_at);
+                      let sucs = new_goals.into_par_iter().map(|new_goal| {
+                      //let sucs = new_goals.into_iter().map(|new_goal| {
+                          let mut new_solution = solution.clone();
+                          new_solution.goal = Some(new_goal);
 
-            if let Some(solutions) = self.solutions.remove(&current_cost) {
+                          let cost = new_solution.reach_goal(map);
 
-                for solution in solutions.iter() {
-                    if solution.keys.len() == 0 {
-                        return solution.steps;
-                    }
-                }
+                          return (new_solution, cost);
+                      })
+                      .collect::<Vec<(Solution, Cost)>>();
 
-                if iter % 100 == 0 {
-                    println!("iter {}", iter);
-                }
-                println!("{:4} solutions removed", solutions.len());
-                let new_solutions = solutions.into_par_iter().map(|mut solution| {
-                    if let Some(goal) = solution.goal {
-                        solution.reach_goal(map);
-                    }
+                      return sucs;
+                  },
+                  |solution| {
+                      let mut heuristics = Vec::new();
 
-                    let new_goals = solution.generate_goals(&self.paths, map);
+                      /* loc tree heuristic */
+                      let mut loc_tree_cost = 0;
+                      let mut loc_paths: HashSet<(Loc, Loc)> = HashSet::new();
+                      let mut locs = solution.keys.iter().map(|key| key.0).collect::<Vec<Loc>>();
+                      //locs.push(solution.loc);
+                      for loc in locs.iter() {
+                          let mut loc_path_cost = None;
+                          let mut shortest_pair = None;
 
-                    let mut new_solutions = Vec::new();
+                          for other_loc in locs.iter() {
+                              if *loc != *other_loc {
+                                 //if loc_paths.contains(&(*loc, *other_loc)) ||
+                                 //   loc_paths.contains(&(*other_loc, *loc)) {
+                                 //     loc_path_cost = None;
+                                 //     shortest_pair = None;
+                                 //     break;
+                                 //}
 
-                    if solution.keys.len() == 0 {
-                        new_solutions.push(solution.clone());
-                    }
+                                  //println!("{:?} -> {:?}", loc, other_loc);
+                                 let path_cost = 
+                                     //distance(*loc, *other_loc);
+                                     //solution.path_to(map, *loc, *other_loc).unwrap().1;
+                                     self.paths.get(&(*loc, *other_loc)).unwrap().len();
+                                 if let Some(cost) = loc_path_cost {
+                                     if path_cost < cost {
+                                         loc_path_cost = Some(cost);
+                                         shortest_pair = Some((*loc, *other_loc))
+                                     }
+                                 } else {
+                                     loc_path_cost = Some(path_cost);
+                                     shortest_pair = Some((*loc, *other_loc));
+                                 }
+                              }
+                          }
 
-                    if new_goals.len() > 0 && 
-                       solution.keys.len() > 0 {
-                        for new_goal in new_goals {
-                            let mut new_solution = solution.clone();
-                            new_solution.goal = Some(new_goal);
+                          if let Some(pair) = shortest_pair {
+                             if !loc_paths.contains(&pair) && !loc_paths.contains(&(pair.1, pair.0)) {
+                                 loc_paths.insert(pair);
+                             }
+                          }
 
-                            let solution_hash = new_solution.hashed();
+                          if let Some(cost) = loc_path_cost {
+                              loc_tree_cost += cost;
+                          }
+                      }
+                      println!("loc_paths.len() = {:3} of {:3}", loc_paths.len(), solution.keys.len());
+                      let mut loc_tree_cost =
+                          loc_paths.iter().map(|(loc0, loc1)| {
+                              //distance(*loc0, *loc1)
+                              self.paths.get(&(*loc0, *loc1)).unwrap().len()
+                              //solution.path_to(map, *loc0, *loc1).unwrap().1
+                          }).sum();
 
-                            if !self.seen.contains_key(&solution_hash) ||
-                               *self.seen.get(&solution_hash).unwrap() > new_solution.steps {
-                                new_solutions.push(new_solution);
-                            }
-                        }
-                    }
+                      let mut min_dist = 100000000;
+                      for (key_loc, _) in solution.keys.iter() {
+                          min_dist =
+                              std::cmp::min(min_dist,
+                                            self.paths.get(&(solution.loc, *key_loc)).unwrap().len());
 
-                    return new_solutions;
-                })
-                .flatten()
-                .collect::<Vec<Solution>>();
+                      }
+                      loc_tree_cost += min_dist;
+                      //println!("loc tree cost {:4}", loc_tree_cost);
+                      heuristics.push(loc_tree_cost);
 
-                println!("{:4} new solutions", new_solutions.len());
-                for new_solution in new_solutions {
-                    if PRINT {
-                        new_solution.print(map);
-                    }
+                      let heuristic = *heuristics.iter().max().unwrap();
 
-                    let solution_hash = new_solution.hashed();
+                      return heuristic;
+                  },
+                  |solution| {
+                      solution.keys.len() == 0
+                  });
 
-                    solutions_looked_at += 1;
+        let path_clone = path.clone().unwrap();
+        let num_sols = path_clone.0.len();
+        dbg!(&path_clone.0[num_sols - 1].collected);
 
-                    if !self.seen.contains_key(&solution_hash) ||
-                        *self.seen.get(&solution_hash).unwrap() > new_solution.steps {
-                        self.seen.insert(solution_hash, new_solution.steps);
-
-                        if !self.solutions.contains_key(&new_solution.steps) {
-                            self.solutions.insert(new_solution.steps, Vec::new());
-                        }
-
-                        //println!("Inserted {}", new_solution.steps);
-                        let sol_vec = self.solutions.get_mut(&new_solution.steps).unwrap();
-                        sol_vec.push(new_solution);
-                    } else {
-                        //println!("Filtered out {:?}", new_solution.loc);
-                    }
-                }
-
-
-                iter += 1;
-            } else {
-                current_cost += 1;
-            }
-        }
-
-        panic!("Solved all solutions, but never finished one!?!??!");
+        return path.unwrap().1;
     }
 }
 
