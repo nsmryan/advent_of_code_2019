@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 const PRINT: bool = false;
 
-const IX: usize = 5;
+const IX: usize = 3;
 
 const INPUT: [&str; 6] = [
 "#########
@@ -224,6 +224,42 @@ impl Solution {
         }
     }
 
+    pub fn path_no_doors(&self, map: &Map, start: Loc, end: Loc) -> Option<(Vec<Loc>, Cost)> {
+        let path =
+            astar(&start, 
+                  |p| {
+                      let mut sucs = Vec::new();
+                      if map.tiles[p.1 - 1][p.0] == Tile::Empty &&
+                         self.door_at_loc((p.0, p.1 - 1)).is_none() {
+                          sucs.push(((p.0, p.1 - 1), 1));
+                      }
+                      if map.tiles[p.1 + 1][p.0] == Tile::Empty &&
+                         self.door_at_loc((p.0, p.1 + 1)).is_none() {
+                          sucs.push(((p.0, p.1 + 1), 1));
+                      }
+                      if map.tiles[p.1][p.0 + 1] == Tile::Empty &&
+                         self.door_at_loc((p.0 + 1, p.1)).is_none() {
+                          sucs.push(((p.0 + 1, p.1), 1));
+                      }
+                      if map.tiles[p.1][p.0 - 1] == Tile::Empty &&
+                         self.door_at_loc((p.0 - 1, p.1)).is_none() {
+                          sucs.push(((p.0 - 1, p.1), 1));
+                      }
+
+                      return sucs;
+                  },
+                  |p| {
+                      ((p.0 as i32 - end.0 as i32).pow(2) + 
+                      (p.1 as i32 - end.1 as i32).pow(2)) as usize
+
+                  },
+                  |p| {
+                      *p == end
+                  });
+
+        return path;
+    }
+
     pub fn path_to(&self, map: &Map, start: Loc, end: Loc) -> Option<(Vec<Loc>, Cost)> {
         let path =
             astar(&start, 
@@ -261,9 +297,13 @@ impl Solution {
 
             let path = self.path_to(map, self.loc, goal);
 
-            if let Some((_, cost)) = path {
-                //println!("Reached goal (cost = {})!", cost);
+            if let Some((points, cost)) = path {
+                //println!("loc = {:?}, goal = {:?}", self.loc, goal);
+                //println!("{:?}", &points);
+                //println!("cost = {}", cost);
+                //println!("old steps = {}", self.steps);
                 self.steps += cost;
+                //println!("new steps = {}", self.steps);
 
                 self.loc = goal;
                 
@@ -299,52 +339,36 @@ impl Solution {
 
     pub fn generate_goals(&self, map: &Map) -> Vec<Loc> {
         let mut new_goals = Vec::new();
-        let mut next_locs = Vec::new();
-
-        next_locs.push(self.loc);
         
         for (key_loc, key_ch) in self.keys.iter() {
             let mut hit_door = false;
-            if let Some((path, _)) = self.path_to(map, self.loc, key_loc) {
-                let up_to = path.len() - 1;
+            let mut hit_key = false;
+            if let Some((path, _)) = self.path_to(map, self.loc, *key_loc) {
+                let up_to = path.len();
                 for path_loc in path.iter().take(up_to) {
-                    if let Some(door_ch) = self.door_at_loc(path_loc) {
-                        if self.collected.position(|col_key| 
-                            col_key == door_ch.to_lowercase().next().unwrap()).is_none() {
-                            new_goals.push(path_loc);
-                            hit_door = true;
+                    if let Some(door_ch) = self.door_at_loc(*path_loc) {
+                        if let Some(col_ix) = self.collected.iter().position(|col_key| 
+                            *col_key == door_ch.to_lowercase().next().unwrap()) {
+                            let col_ch = self.collected[col_ix];
+                            //println!("Adding door {}, with key {}", door_ch, col_ch);;
+                            new_goals.push(*path_loc);
+                        }
+
+                        hit_door = true;
+                        break;
+                    } else if let Some(other_key_ch) = self.key_at_loc(*path_loc) {
+                        if *key_ch != other_key_ch {
+                            hit_key = true;
+                            break;
                         }
                     }
                 }
             }
 
-            if !hit_door {
-                new_goals.push(key_loc);
+            if !hit_key && (!hit_door || self.path_no_doors(map, self.loc, *key_loc).is_some()) {
+                new_goals.push(*key_loc);
             }
         }
-
-        /*
-        let mut final_goals = Vec::new();
-
-        for goal in new_goals {
-            if let Some((path, _)) = self.path_to(map, self.loc, goal) {
-                let mut hits_key = false;
-                let up_to = path.len() - 2;
-                for loc in path.iter().take(up_to) {
-                    if self.key_at_loc(*loc).is_some() {
-                        hits_key = true;
-                        break;
-                    }
-                }
-
-                if !hits_key {
-                    final_goals.push(goal);
-                }
-            }
-        }
-
-        return final_goals;
-        */
 
         return new_goals;
     }
@@ -375,6 +399,7 @@ impl Solution {
             println!("");
         }
 
+        println!("Loc {:?}", self.loc);
         println!("Collected keys {:?}", self.collected);
         println!("Remaining keys {:?}", self.keys);
         println!("Remaining doors {:?}", self.doors);
@@ -411,16 +436,15 @@ impl Solver {
         let mut solutions_looked_at = 0;
 
         while self.solutions.len() > 0 {
-            if current_cost % 10 == 0 {
-                println!("solver cost = {:3}, left = {:6}, looked at {:6}",
-                         current_cost, self.solutions.len(), solutions_looked_at);
-            }
+            println!("solver cost = {:3}, left = {:6}, looked at {:6}",
+                     current_cost, self.solutions.len(), solutions_looked_at);
 
             if let Some(solutions) = self.solutions.remove(&current_cost) {
                 if iter % 100 == 0 {
                     println!("iter {}", iter);
                 }
-                let new_solutions = solutions.into_par_iter().map(|mut solution| {
+                //println!("{:?}", &solutions);
+                let new_solutions = solutions.into_iter().map(|mut solution| {
                     if let Some(goal) = solution.goal {
                         solution.reach_goal(map);
                     }
@@ -430,8 +454,10 @@ impl Solver {
                     let mut new_solutions = Vec::new();
 
                     if solution.keys.len() == 0 {
+                        //println!("Found solution");
                         new_solutions.push(solution.clone());
                     }
+                    //println!("new goals: {}", new_goals.len());
 
                     if new_goals.len() > 0 && solution.keys.len() > 0 {
                         for new_goal in new_goals {
@@ -439,9 +465,7 @@ impl Solver {
                             new_solution.goal = Some(new_goal);
 
                             let solution_hash = new_solution.hashed();
-                            if !self.seen.contains_key(&solution_hash) {
-                                new_solutions.push(new_solution);
-                            }
+                            new_solutions.push(new_solution);
                         }
                     }
 
@@ -459,20 +483,24 @@ impl Solver {
 
                     solutions_looked_at += 1;
 
+                    if new_solution.keys.len() == 0 {
+                        return new_solution.steps;
+                    }
+
+
                     if !self.seen.contains_key(&solution_hash) ||
                         *self.seen.get(&solution_hash).unwrap() > new_solution.steps {
                         self.seen.insert(solution_hash, new_solution.steps);
-
-                        if new_solution.keys.len() == 0 {
-                            return new_solution.steps;
-                        }
 
                         if !self.solutions.contains_key(&new_solution.steps) {
                             self.solutions.insert(new_solution.steps, Vec::new());
                         }
 
+                        //println!("Inserted {}", new_solution.steps);
                         let sol_vec = self.solutions.get_mut(&new_solution.steps).unwrap();
                         sol_vec.push(new_solution);
+                    } else {
+                        //println!("Filtered out {:?}", new_solution.loc);
                     }
                 }
 
