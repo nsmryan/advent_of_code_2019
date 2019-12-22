@@ -313,7 +313,7 @@ impl Solution {
 
                     // add the key to the collected key list
                     self.collected.push(ch);
-                } else if let Some(door_ix) = self.doors.iter().position(|(loc,ch)| *loc == self.loc) {
+                } /* else if let Some(door_ix) = self.doors.iter().position(|(loc,ch)| *loc == self.loc) {
                     // remove the door- it is now unlocked by the key
                     let (door_loc, door_ch) = self.doors.swap_remove(door_ix);
 
@@ -329,6 +329,7 @@ impl Solution {
                         panic!(format!("Attempted to open door ({}) without key!", door_ch));
                     }
                 }
+                  */
             } else {
                 panic!("No path to goal!");
             }
@@ -347,14 +348,13 @@ impl Solution {
                 let up_to = path.len();
                 for path_loc in path.iter().take(up_to) {
                     if let Some(door_ch) = self.door_at_loc(*path_loc) {
-                        if let Some(col_ix) = self.collected.iter().position(|col_key| 
+                        if !self.collected.iter().any(|col_key| 
                             *col_key == door_ch.to_lowercase().next().unwrap()) {
-                            let col_ch = self.collected[col_ix];
+                            //let col_ch = self.collected[col_ix];
                             //println!("Adding door {}, with key {}", door_ch, col_ch);;
-                            new_goals.push(*path_loc);
+                            //new_goals.push(*path_loc);
+                            hit_door = true;
                         }
-
-                        hit_door = true;
                         break;
                     } else if let Some(other_key_ch) = self.key_at_loc(*path_loc) {
                         if *key_ch != other_key_ch {
