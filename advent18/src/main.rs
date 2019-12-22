@@ -8,7 +8,7 @@ use pathfinding::directed::astar::astar;
 use rayon::prelude::*;
 
 
-const IX: usize = 5;
+const IX: usize = 1;
 
 const INPUT: [&str; 6] = [
 "#########
@@ -412,6 +412,10 @@ impl Solver {
 
                     let mut new_solutions = Vec::new();
 
+                    if solution.keys.len() == 0 {
+                        new_solutions.push(solution.clone());
+                    }
+
                     if new_goals.len() > 0 && solution.keys.len() > 0 {
                         for new_goal in new_goals {
                             let mut new_solution = solution.clone();
@@ -430,20 +434,24 @@ impl Solver {
                 .collect::<Vec<Solution>>();
 
                 for new_solution in new_solutions {
+                    new_solution.print(map);
+
                     let solution_hash = new_solution.hashed();
 
-                    self.seen.insert(solution_hash);
+                    if !self.seen.contains(&solution_hash) {
+                        self.seen.insert(solution_hash);
 
-                    if new_solution.keys.len() == 0 {
-                        return new_solution.steps;
+                        if new_solution.keys.len() == 0 {
+                            return new_solution.steps;
+                        }
+
+                        if !self.solutions.contains_key(&new_solution.steps) {
+                            self.solutions.insert(new_solution.steps, Vec::new());
+                        }
+
+                        let sol_vec = self.solutions.get_mut(&new_solution.steps).unwrap();
+                        sol_vec.push(new_solution);
                     }
-
-                    if !self.solutions.contains_key(&new_solution.steps) {
-                        self.solutions.insert(new_solution.steps, Vec::new());
-                    }
-
-                    let sol_vec = self.solutions.get_mut(&new_solution.steps).unwrap();
-                    sol_vec.push(new_solution);
                 }
 
 
