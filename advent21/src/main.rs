@@ -469,11 +469,14 @@ impl JumpWriteReg {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum JumpCode {
-    And(JumpReg, JumpWriteReg),
-    Or(JumpReg, JumpWriteReg),
-    Not(JumpReg, JumpWriteReg),
+pub enum JumpOp {
+    And,
+    Or,
+    Not
 }
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct JumpCode(JumpOf, JumpReg, JumpWriteReg);
 
 impl JumpCode {
     pub fn compile(self) -> String{
@@ -492,42 +495,6 @@ impl JumpCode {
 
         }
     }
-}
-
-pub fn all_jump_code_helper(current: Vec<JumpCode>, progs: &mut Vec<Vec<JumpCode>>) {
-    if progs.len() % 100000 == 0 {
-        println!("len = {}", progs.len());
-    }
-    if current.len() == 15 {
-        return;
-    }
-
-    for reg in JumpReg::all() {
-        for write_reg in JumpWriteReg::all() {
-            let mut and_prog = current.clone();
-            and_prog.push(JumpCode::And(reg, write_reg));
-            progs.push(and_prog.clone());
-            all_jump_code_helper(and_prog.clone(), progs);
-
-            let mut or_prog = current.clone();
-            or_prog.push(JumpCode::Or(reg, write_reg));
-            progs.push(or_prog.clone());
-            all_jump_code_helper(or_prog.clone(), progs);
-
-            let mut not_prog = current.clone();
-            not_prog.push(JumpCode::Not(reg, write_reg));
-            progs.push(not_prog.clone());
-            all_jump_code_helper(not_prog.clone(), progs);
-        }
-    }
-}
- 
-pub fn all_jump_code_programs() -> Vec<Vec<JumpCode>> {
-    let mut progs = Vec::new();
-
-    all_jump_code_helper(Vec::new(), &mut progs);
-
-    return progs;
 }
 
 pub fn compile_jump_code(jump_code: &[JumpCode]) -> String {
