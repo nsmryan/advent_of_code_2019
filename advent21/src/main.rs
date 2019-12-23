@@ -1,11 +1,8 @@
 use std::convert::TryFrom;
 use std::collections::VecDeque;
 use std::collections::HashMap;
-use std::collections::HashSet;
-use std::thread::sleep;
-use std::time::Duration;
 
-use rayon::prelude::*;
+//use rayon::prelude::*;
 
 
 const DEBUG: bool = false;
@@ -446,6 +443,22 @@ impl JumpReg {
         use JumpReg::*;
         return vec!(T, J, A, B, C, D, E, F, G, H, I);
     }
+
+    pub fn to_offset(self) -> usize {
+        match self {
+            JumpReg::T => panic!("no offset for T"),
+            JumpReg::J => panic!("no offset for J"),
+            JumpReg::A => 1,
+            JumpReg::B => 2,
+            JumpReg::C => 3,
+            JumpReg::D => 4,
+            JumpReg::E => 5,
+            JumpReg::F => 6,
+            JumpReg::G => 7,
+            JumpReg::H => 8,
+            JumpReg::I => 9,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -476,25 +489,174 @@ pub enum JumpOp {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct JumpCode(JumpOf, JumpReg, JumpWriteReg);
+pub struct JumpCode(JumpOp, JumpReg, JumpWriteReg);
 
 impl JumpCode {
     pub fn compile(self) -> String{
-        match self {
-            JumpCode::And(reg, write_reg) => {
-                format!("NOT {} {}", reg.compile(), write_reg.compile())
+        match self.0 {
+            JumpOp::And => {
+                format!("NOT {} {}", self.1.compile(), self.2.compile())
             },
 
-            JumpCode::Or(reg, write_reg) => {
-                format!("NOT {} {}", reg.compile(), write_reg.compile())
+            JumpOp::Or => {
+                format!("NOT {} {}", self.1.compile(), self.2.compile())
             },
 
-            JumpCode::Not(reg, write_reg) => {
-                format!("NOT {} {}", reg.compile(), write_reg.compile())
+            JumpOp::Not => {
+                format!("NOT {} {}", self.1.compile(), self.2.compile())
             },
 
         }
     }
+}
+
+pub struct JumpState {
+    t: bool,
+    j: bool,
+}
+
+impl JumpState {
+    pub fn new() -> JumpState {
+        return JumpState { t: false, j: false };
+    }
+
+    pub fn read_reg(&self, reg: JumpWriteReg) -> bool {
+        match reg {
+            JumpWriteReg::T => self.t,
+            JumpWriteReg::J => self.j,
+        }
+    }
+
+    pub fn write_reg(&mut self, reg: JumpWriteReg, value: bool) {
+        match reg {
+            JumpWriteReg::T => self.t = value,
+            JumpWriteReg::J => self.j = value,
+        }
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum Tile {
+    Empty,
+    Floor,
+}
+
+pub fn will_jump(jump_code: &[JumpCode], scene: &[Tile], pos: usize) -> bool {
+    use JumpOp::*;
+    use JumpReg::*;
+
+    let mut jump_state = JumpState::new();
+
+    for code in jump_code.iter() {
+        let in_value = match code.1 {
+            T => {
+                jump_state.read_reg(JumpWriteReg::T)
+            },
+
+            J => {
+                jump_state.read_reg(JumpWriteReg::J)
+            },
+
+            _ => {
+                let offset = code.1.to_offset();
+                scene[offset] == Tile::Floor
+            }
+        };
+
+        let out_value = jump_state.read_reg(code.2);
+
+        match code.0 {
+            And => {
+                jump_state.write_reg(code.2, out_value & in_value);
+            }
+
+            Or => {
+                jump_state.write_reg(code.2, out_value | in_value);
+            }
+
+            Not => {
+                jump_state.write_reg(code.2, !in_value);
+            }
+        }
+    }
+
+    return jump_state.j;
+}
+
+#[test]
+pub fn test_will_jump() {
+    use JumpOp::*;
+    use JumpReg::*;
+    use Tile::*;
+
+    let prog =
+        vec!();
+
+    let scene =
+        vec!(Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor);
+
+    assert_eq!(will_jump(&prog, &scene, 0), false);
+
+    let prog =
+        vec!(JumpCode(Not, J, JumpWriteReg::J));
+    assert_eq!(will_jump(&prog, &scene, 0), true);
+
+    let prog =
+        vec!(JumpCode(Not, A, JumpWriteReg::J));
+    let scene =
+        vec!(Floor, Empty, Floor, Floor,
+             Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor);
+    assert_eq!(will_jump(&prog, &scene, 0), true);
+
+    let prog =
+        vec!(JumpCode(Not, B, JumpWriteReg::J));
+    let scene =
+        vec!(Floor, Floor, Empty, Floor,
+             Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor);
+    assert_eq!(will_jump(&prog, &scene, 0), true);
+
+    let prog =
+        vec!(JumpCode(Not, A, JumpWriteReg::J),
+             JumpCode(Not, B, JumpWriteReg::T),
+             JumpCode(And, J, JumpWriteReg::J));
+    let scene =
+        vec!(Floor, Empty, Empty, Floor,
+             Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor);
+    assert_eq!(will_jump(&prog, &scene, 0), true);
+
+    let prog =
+        vec!(JumpCode(Not, A, JumpWriteReg::J),
+             JumpCode(Not, B, JumpWriteReg::T),
+             JumpCode(Or, J, JumpWriteReg::J));
+    let scene =
+        vec!(Floor, Empty, Floor, Floor,
+             Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor);
+    assert_eq!(will_jump(&prog, &scene, 0), true);
+}
+
+pub fn run_jump_code(jump_code: &[JumpCode], scene: &[Tile]) -> bool {
+    let mut jump_left = 0;
+
+    for ix in 0..scene.len() {
+
+        if scene[ix] == Tile::Empty {
+            return false;
+        }
+
+        if will_jump(&jump_code[ix..], scene, ix) && jump_left == 0 {
+            jump_left = 4;
+        } else {
+            jump_left -= 1;
+        }
+    }
+
+    return true;
 }
 
 pub fn compile_jump_code(jump_code: &[JumpCode]) -> String {
@@ -534,38 +696,6 @@ fn main() {
         , "NOT T T\n"
         , "AND T J\n"
         ].join("");;
-
-    /*
-    all_jump_code_programs().into_par_iter().map(|prog| {
-        let mut cur_int_code = int_code.clone();
-
-        cur_int_code.run();
-        for ch in cur_int_code.output.iter() {
-            print!("{}", u8::try_from(*ch).unwrap() as char);
-        }
-        cur_int_code.output.clear();
-
-        cur_int_code.input = 
-            jump_code.chars()
-            .chain("RUN\n".chars())
-            .map(|ch| ch as Value)
-            .collect::<VecDeque<Value>>();
-        cur_int_code.run();
-
-        if cur_int_code.output[0] > 128 {
-            println!("Answer = {}", cur_int_code.output[0]);
-        } else {
-            for value in cur_int_code.output.iter() {
-                if let Ok(ch) = u8::try_from(*value) {
-                    print!("{}", ch as char);
-                } else {
-                    println!("Hull damage {}", value);
-                    return;
-                }
-            }
-        }
-    });
-    */
 
     int_code.run();
     for ch in int_code.output.iter() {
