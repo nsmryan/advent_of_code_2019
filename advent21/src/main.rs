@@ -495,11 +495,11 @@ impl JumpCode {
     pub fn compile(self) -> String{
         match self.0 {
             JumpOp::And => {
-                format!("NOT {} {}", self.1.compile(), self.2.compile())
+                format!("AND {} {}", self.1.compile(), self.2.compile())
             },
 
             JumpOp::Or => {
-                format!("NOT {} {}", self.1.compile(), self.2.compile())
+                format!("OR {} {}", self.1.compile(), self.2.compile())
             },
 
             JumpOp::Not => {
@@ -510,6 +510,7 @@ impl JumpCode {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct JumpState {
     t: bool,
     j: bool,
@@ -559,7 +560,7 @@ pub fn will_jump(jump_code: &[JumpCode], scene: &[Tile], pos: usize) -> bool {
 
             _ => {
                 let offset = code.1.to_offset();
-                scene[offset] == Tile::Floor
+                offset < scene.len() && scene[offset] == Tile::Floor
             }
         };
 
@@ -645,18 +646,40 @@ pub fn run_jump_code(jump_code: &[JumpCode], scene: &[Tile]) -> bool {
 
     for ix in 0..scene.len() {
 
-        if scene[ix] == Tile::Empty {
+        if jump_left == 0 && scene[ix] == Tile::Empty {
             return false;
         }
 
-        if will_jump(&jump_code[ix..], scene, ix) && jump_left == 0 {
+        if will_jump(jump_code, &scene[ix..scene.len()], ix) && jump_left == 0 {
             jump_left = 4;
-        } else {
+        } else if jump_left > 0 {
             jump_left -= 1;
         }
     }
 
     return true;
+}
+
+#[test]
+pub fn test_run_jump_code() {
+    use JumpOp::*;
+    use JumpReg::*;
+    use Tile::*;
+
+    let prog =
+        vec!(JumpCode(Not, A, JumpWriteReg::J));
+    let scene =
+        vec!(Floor, Empty, Floor, Floor,
+             Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor);
+    assert_eq!(run_jump_code(&prog, &scene), true);
+
+    let prog = vec!();
+    let scene =
+        vec!(Floor, Empty, Floor, Floor,
+             Floor, Floor, Floor, Floor,
+             Floor, Floor, Floor, Floor);
+    assert_eq!(run_jump_code(&prog, &scene), false);
 }
 
 pub fn compile_jump_code(jump_code: &[JumpCode]) -> String {
@@ -674,28 +697,40 @@ fn main() {
     let mut int_code = IntCodeState::from_string(INPUT);
 
     let mut status = Status::Step;
+    
+    use JumpOp::*;
+    use JumpReg::*;
+    use Tile::*;
 
     let jump_code =
-        [
-        // test end of vision
-          "OR D T\n"
-        , "AND I T\n"
-        , "AND E T\n"
-        , "OR H T\n"
-          
-        // clear J
-        , "AND D T\n"
-        , "NOT T J\n"
-        , "NOT J J\n"
+        vec!(
+             JumpCode(Or,  D, JumpWriteReg::J),
+             JumpCode(And, D, JumpWriteReg::J),
 
-        , "AND T J\n"
-        , "OR D T\n"
-        , "AND A T\n"
-        , "AND B T\n"
-        , "AND C T\n"
-        , "NOT T T\n"
-        , "AND T J\n"
-        ].join("");;
+             JumpCode(Or,  D, JumpWriteReg::T),
+             JumpCode(And, A, JumpWriteReg::T),
+             JumpCode(And, B, JumpWriteReg::T),
+             JumpCode(And, C, JumpWriteReg::T),
+             JumpCode(Not, T, JumpWriteReg::T),
+             JumpCode(And, T, JumpWriteReg::J),
+
+             JumpCode(Not, D, JumpWriteReg::T),
+             JumpCode(Or,  I, JumpWriteReg::T),
+             JumpCode(Or,  F, JumpWriteReg::T),
+             JumpCode(And, E, JumpWriteReg::T),
+             JumpCode(Or,  H, JumpWriteReg::T),
+
+             JumpCode(And, T, JumpWriteReg::J),
+             );
+
+    {
+        let scene0 = vec!(Floor, Empty, Floor, Floor,
+                          Floor, Floor, Floor, Floor);
+        //assert_eq!(run_jump_code(&jump_code, &scene0), true);
+    }
+
+    let jump_code = compile_jump_code(&jump_code);
+    println!("{}", &jump_code);
 
     int_code.run();
     for ch in int_code.output.iter() {
