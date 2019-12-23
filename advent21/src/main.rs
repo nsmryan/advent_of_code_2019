@@ -5,6 +5,8 @@ use std::collections::HashSet;
 use std::thread::sleep;
 use std::time::Duration;
 
+use rayon::prelude::*;
+
 
 const DEBUG: bool = false;
 
@@ -408,151 +410,134 @@ fn to_digits(value: Value) -> VecDeque<u8> {
     return digits;
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum Tile {
-    Empty,
-    Scaffold,
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum JumpReg {
+    T,
+    J,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
 }
 
-impl Tile {
-    pub fn from_code(value: Value) -> Tile {
-        let left = '<' as Value;
-        let right = '>' as Value;
-        let up = '^' as Value;
-        let down = 'v' as Value;
-        match value {
-            35 => Tile::Scaffold,
-            46 => Tile::Empty,
-            left => Tile::Scaffold,
-            right => Tile::Scaffold,
-            down => Tile::Scaffold,
-            up => Tile::Scaffold,
-            _ => panic!(format!("Unexpected output ({})!", value)),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum Dir {
-    North,
-    South,
-    West,
-    East,
-}
-
-impl Dir {
-    pub fn to_input(&self) -> Value {
+impl JumpReg {
+    pub fn compile(self) -> String {
         match self {
-            Dir::North => 1,
-            Dir::South => 2,
-            Dir::West  => 3,
-            Dir::East  => 4,
+            JumpReg::T => "T".to_string(),
+            JumpReg::J => "J".to_string(),
+            JumpReg::A => "A".to_string(),
+            JumpReg::B => "B".to_string(),
+            JumpReg::C => "C".to_string(),
+            JumpReg::D => "D".to_string(),
+            JumpReg::E => "E".to_string(),
+            JumpReg::F => "F".to_string(),
+            JumpReg::G => "G".to_string(),
+            JumpReg::H => "H".to_string(),
+            JumpReg::I => "I".to_string(),
         }
     }
 
-    pub fn to_output(&self) -> &str {
+    pub fn all() -> Vec<JumpReg> {
+        use JumpReg::*;
+        return vec!(T, J, A, B, C, D, E, F, G, H, I);
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum JumpWriteReg {
+    T,
+    J,
+}
+
+impl JumpWriteReg {
+    pub fn compile(self) -> String {
         match self {
-            Dir::North => "^",
-            Dir::South => "v",
-            Dir::West  => ">",
-            Dir::East  => "<",
+            JumpWriteReg::T => "T".to_string(),
+            JumpWriteReg::J => "J".to_string(),
         }
     }
 
-    pub fn rotate_left(&self) -> Dir {
+    pub fn all() -> Vec<JumpWriteReg> {
+        use JumpWriteReg::*;
+        return vec!(T, J);
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum JumpCode {
+    And(JumpReg, JumpWriteReg),
+    Or(JumpReg, JumpWriteReg),
+    Not(JumpReg, JumpWriteReg),
+}
+
+impl JumpCode {
+    pub fn compile(self) -> String{
         match self {
-            Dir::North => Dir::West,
-            Dir::South => Dir::East,
-            Dir::West  => Dir::South,
-            Dir::East  => Dir::North,
-        }
-    }
+            JumpCode::And(reg, write_reg) => {
+                format!("NOT {} {}", reg.compile(), write_reg.compile())
+            },
 
-    pub fn rotate_right(&self) -> Dir {
-        match self {
-            Dir::North => Dir::East,
-            Dir::South => Dir::West,
-            Dir::West  => Dir::North,
-            Dir::East  => Dir::South,
-        }
-    }
+            JumpCode::Or(reg, write_reg) => {
+                format!("NOT {} {}", reg.compile(), write_reg.compile())
+            },
 
-    pub fn move_dir(&self, loc: (usize, usize)) -> (usize, usize) {
-        match self {
-            Dir::North => (loc.0, loc.1 - 1),
-            Dir::East => (loc.0 + 1, loc.1),
-            Dir::South => (loc.0, loc.1 + 1),
-            Dir::West => (loc.0 - 1, loc.1),
+            JumpCode::Not(reg, write_reg) => {
+                format!("NOT {} {}", reg.compile(), write_reg.compile())
+            },
+
         }
     }
 }
 
-pub type Map = Vec<Vec<Tile>>;
-
-
-pub fn print_map(map: &Map, loc: (usize, usize), dir: Dir) {
-    println!("");
-    for x in 0..map[0].len() {
-        print!("_");
+pub fn all_jump_code_helper(current: Vec<JumpCode>, progs: &mut Vec<Vec<JumpCode>>) {
+    if progs.len() % 100000 == 0 {
+        println!("len = {}", progs.len());
     }
-    println!("");
-    for y in 0..map.len() {
-        print!("|");
-        for x in 0..map[0].len() {
-            match map[y][x] {
-                Tile::Empty => {
-                    print!(" ");
-                }
+    if current.len() == 15 {
+        return;
+    }
 
-                Tile::Scaffold => {
-                    if (x, y) == loc {
-                        print!("{}", dir.to_output());
-                    } else {
-                        print!("#");
-                    }
-                }
-            }
+    for reg in JumpReg::all() {
+        for write_reg in JumpWriteReg::all() {
+            let mut and_prog = current.clone();
+            and_prog.push(JumpCode::And(reg, write_reg));
+            progs.push(and_prog.clone());
+            all_jump_code_helper(and_prog.clone(), progs);
+
+            let mut or_prog = current.clone();
+            or_prog.push(JumpCode::Or(reg, write_reg));
+            progs.push(or_prog.clone());
+            all_jump_code_helper(or_prog.clone(), progs);
+
+            let mut not_prog = current.clone();
+            not_prog.push(JumpCode::Not(reg, write_reg));
+            progs.push(not_prog.clone());
+            all_jump_code_helper(not_prog.clone(), progs);
         }
-        print!("|");
-        println!("");
     }
-    for x in 0..map[0].len() {
-        print!("_");
+}
+ 
+pub fn all_jump_code_programs() -> Vec<Vec<JumpCode>> {
+    let mut progs = Vec::new();
+
+    all_jump_code_helper(Vec::new(), &mut progs);
+
+    return progs;
+}
+
+pub fn compile_jump_code(jump_code: &[JumpCode]) -> String {
+    let mut result = "".to_string();
+
+    for code in jump_code {
+        result = format!("{}{}\n", result, code.compile()).to_string();
     }
-    println!("");
-}
 
-pub fn clear_console() {
-    print!("{}[2J", 27 as char);
-}
-
-pub fn wait_for_input() {
-    let mut string = String::new();
-    std::io::stdin().read_line(&mut string);
-}
-
-pub fn pulled(int_code: &IntCodeState, x: usize, y: usize) -> bool {
-    let mut int_code = int_code.clone();
-
-    int_code.input.push_front(x as Value);
-    int_code.input.push_back(y as Value);
-    int_code.run();
-
-    return int_code.output.pop_front().unwrap() == 1;
-}
-
-pub fn search_start(int_code: &IntCodeState, x: usize, y: usize, pull: bool) -> usize {
-    let power = 0;
-
-    let mut x = x;
-    loop {
-
-        if pulled(int_code, x, y) == pull && pulled(int_code, x-1, y) != pull {
-            return x;
-        }
-
-        x += 1;
-    }
+    return result;
 }
 
 fn main() {
@@ -562,14 +547,58 @@ fn main() {
     let mut status = Status::Step;
 
     let jump_code =
-        [ "NOT A J\n"
-        , "NOT B T\n"
-        , "OR T J\n"
-        , "NOT C T\n"
-        , "OR T J\n"
-        , "AND D J\n"
+        [
+        // test end of vision
+          "OR D T\n"
+        , "AND I T\n"
+        , "AND E T\n"
+        , "OR H T\n"
+          
+        // clear J
+        , "AND D T\n"
+        , "NOT T J\n"
+        , "NOT J J\n"
+
+        , "AND T J\n"
+        , "OR D T\n"
+        , "AND A T\n"
+        , "AND B T\n"
+        , "AND C T\n"
+        , "NOT T T\n"
+        , "AND T J\n"
         ].join("");;
 
+    /*
+    all_jump_code_programs().into_par_iter().map(|prog| {
+        let mut cur_int_code = int_code.clone();
+
+        cur_int_code.run();
+        for ch in cur_int_code.output.iter() {
+            print!("{}", u8::try_from(*ch).unwrap() as char);
+        }
+        cur_int_code.output.clear();
+
+        cur_int_code.input = 
+            jump_code.chars()
+            .chain("RUN\n".chars())
+            .map(|ch| ch as Value)
+            .collect::<VecDeque<Value>>();
+        cur_int_code.run();
+
+        if cur_int_code.output[0] > 128 {
+            println!("Answer = {}", cur_int_code.output[0]);
+        } else {
+            for value in cur_int_code.output.iter() {
+                if let Ok(ch) = u8::try_from(*value) {
+                    print!("{}", ch as char);
+                } else {
+                    println!("Hull damage {}", value);
+                    return;
+                }
+            }
+        }
+    });
+    */
 
     int_code.run();
     for ch in int_code.output.iter() {
@@ -579,7 +608,7 @@ fn main() {
 
     int_code.input = 
         jump_code.chars()
-        .chain("WALK\n".chars())
+        .chain("RUN\n".chars())
         .map(|ch| ch as Value)
         .collect::<VecDeque<Value>>();
     int_code.run();
@@ -587,9 +616,13 @@ fn main() {
     if int_code.output[0] > 128 {
         println!("Answer = {}", int_code.output[0]);
     } else {
-        for ch in int_code.output.iter() {
-            println!("'{}'", *ch);
-            print!("{}", u8::try_from(*ch).unwrap() as char);
+        for value in int_code.output.iter() {
+            if let Ok(ch) = u8::try_from(*value) {
+                print!("{}", ch as char);
+            } else {
+                println!("Hull damage {}", value);
+                return;
+            }
         }
     }
 }
