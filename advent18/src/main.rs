@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 const PRINT: bool = false;
 
-const IX: usize = 3;
+const IX: usize = 5;
 
 const INPUT: [&str; 6] = [
 "#########
@@ -172,9 +172,9 @@ impl Hash for Solution {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.loc.hash(state);
         self.collected.hash(state);
-        self.keys.hash(state);
-        self.doors.hash(state);
         self.goal.hash(state);
+        //self.keys.hash(state);
+        //self.doors.hash(state);
     }
 }
 
@@ -459,16 +459,21 @@ impl Solver {
     }
 
     pub fn solve(&mut self, map: &Map) -> Cost {
+        let mut iters = 0;
 
         let path =
             astar(&self.initial, 
                   |solution| {
-                      //let mut sucs = Vec::new();
-
                       let new_goals = solution.generate_goals(&self.paths, map);
 
-                      let sucs = new_goals.into_par_iter().map(|new_goal| {
+                      if iters % 1000 == 0 {
+                          println!("{:3}: cost = {:3}, {:3} new", iters, solution.steps, new_goals.len());
+                      }
+                      iters += 1;
+
+                      //let mut sucs = Vec::new();
                       //let sucs = new_goals.into_iter().map(|new_goal| {
+                      let sucs = new_goals.into_par_iter().map(|new_goal| {
                           let mut new_solution = solution.clone();
                           new_solution.goal = Some(new_goal);
 
@@ -480,77 +485,72 @@ impl Solver {
 
                       return sucs;
                   },
+
                   |solution| {
                       let mut heuristics = Vec::new();
 
-                      /* loc tree heuristic */
-                      let mut loc_tree_cost = 0;
-                      let mut loc_paths: HashSet<(Loc, Loc)> = HashSet::new();
-                      let mut locs = solution.keys.iter().map(|key| key.0).collect::<Vec<Loc>>();
-                      //locs.push(solution.loc);
-                      for loc in locs.iter() {
-                          let mut loc_path_cost = None;
+                      /* minimum spanning tree */
+                      if solution.keys.len() == 0 {
+                          return 0;
+                      }
+
+                      let mut paths = Vec::new();
+
+                      let mut tree = HashSet::new();
+                      let mut not_tree = HashSet::new();
+                      for (key_loc, _) in solution.keys.iter().skip(1) {
+                          not_tree.insert(*key_loc);
+                      }
+                      tree.insert(solution.keys[0].0);
+
+                      while solution.keys.len() != tree.len() {
+                          //println!("tree = {}, of {}", tree.len(), not_tree.len());
                           let mut shortest_pair = None;
 
-                          for other_loc in locs.iter() {
-                              if *loc != *other_loc {
-                                 //if loc_paths.contains(&(*loc, *other_loc)) ||
-                                 //   loc_paths.contains(&(*other_loc, *loc)) {
-                                 //     loc_path_cost = None;
-                                 //     shortest_pair = None;
-                                 //     break;
-                                 //}
+                          for key_loc in not_tree.iter() {
+                              for tree_loc in tree.iter() {
+                                  if let Some(pair) = shortest_pair {
+                                      let prev_cost = self.paths.get(&pair).unwrap().len();
+                                      let cur_cost  = self.paths.get(&(*key_loc, *tree_loc)).unwrap().len();
 
-                                  //println!("{:?} -> {:?}", loc, other_loc);
-                                 let path_cost = 
-                                     //distance(*loc, *other_loc);
-                                     //solution.path_to(map, *loc, *other_loc).unwrap().1;
-                                     self.paths.get(&(*loc, *other_loc)).unwrap().len();
-                                 if let Some(cost) = loc_path_cost {
-                                     if path_cost < cost {
-                                         loc_path_cost = Some(cost);
-                                         shortest_pair = Some((*loc, *other_loc))
-                                     }
-                                 } else {
-                                     loc_path_cost = Some(path_cost);
-                                     shortest_pair = Some((*loc, *other_loc));
-                                 }
+                                      if cur_cost < prev_cost {
+                                          shortest_pair = Some((*key_loc, *tree_loc));
+                                      }
+                                  } else {
+                                      shortest_pair = Some((*key_loc, *tree_loc));
+                                  }
                               }
                           }
 
                           if let Some(pair) = shortest_pair {
-                             if !loc_paths.contains(&pair) && !loc_paths.contains(&(pair.1, pair.0)) {
-                                 loc_paths.insert(pair);
-                             }
-                          }
-
-                          if let Some(cost) = loc_path_cost {
-                              loc_tree_cost += cost;
-                          }
+                              tree.insert(pair.0);
+                              tree.insert(pair.1);
+                              not_tree.remove(&pair.0);
+                              not_tree.remove(&pair.1);
+                              paths.push(pair);
+                          } 
                       }
-                      println!("loc_paths.len() = {:3} of {:3}", loc_paths.len(), solution.keys.len());
-                      let mut loc_tree_cost =
-                          loc_paths.iter().map(|(loc0, loc1)| {
-                              //distance(*loc0, *loc1)
-                              self.paths.get(&(*loc0, *loc1)).unwrap().len()
-                              //solution.path_to(map, *loc0, *loc1).unwrap().1
-                          }).sum();
 
-                      let mut min_dist = 100000000;
-                      for (key_loc, _) in solution.keys.iter() {
-                          min_dist =
-                              std::cmp::min(min_dist,
-                                            self.paths.get(&(solution.loc, *key_loc)).unwrap().len());
+                      let path_dist: usize = paths.iter().map(|pair| {
+                          self.paths.get(&pair).unwrap().len()
+                      }).sum();
+                      //println!("path dist = {}", path_dist);
 
-                      }
-                      loc_tree_cost += min_dist;
-                      //println!("loc tree cost {:4}", loc_tree_cost);
-                      heuristics.push(loc_tree_cost);
+                      let loc_dist = solution.keys.iter().map(|(key_loc, _)| {
+                          self.paths.get(&(solution.loc, *key_loc)).unwrap().len()
+                      }).min().unwrap_or(0);
+                      //println!("loc dist = {}", loc_dist);
+
+                      let min_span_tree_cost = path_dist + loc_dist;
+                      //println!("min_span_tree_cost = {}", min_span_tree_cost);
+                      heuristics.push(min_span_tree_cost);
+
 
                       let heuristic = *heuristics.iter().max().unwrap();
 
                       return heuristic;
                   },
+
                   |solution| {
                       solution.keys.len() == 0
                   });
