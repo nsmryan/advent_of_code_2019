@@ -10,37 +10,39 @@ use rayon::prelude::*;
 
 const PRINT: bool = false;
 
-const IX: usize = 5;
+const IX: usize = 4;
 
-const INPUT: [&str; 6] = [
-"#########
-#b.A.@.a#
-#########",
-"########################
-#f.D.E.e.C.b.A.@.a.B.c.#
-######################.#
-#d.....................#
-########################",
-"########################
-#...............b.C.D.f#
-#.######################
-#.....@.a.B.c.d.A.e.F.g#
-########################",
-"#################
-#i.G..c...e..H.p#
-########.########
-#j.A..b...f..D.o#
-########@########
-#k.E..a...g..B.n#
-########.########
-#l.F..d...h..C.m#
-#################",
-"########################
-#@..............ac.GI.b#
-###d#e#f################
-###A#B#C################
-###g#h#i################
-########################",
+const INPUT: [&str; 5] = [
+"#######
+#a.#Cd#
+##@#@##
+#######
+##@#@##
+#cB#Ab#
+#######",
+"###############
+#d.ABC.#.....a#
+######@#@######
+###############
+######@#@######
+#b.....#.....c#
+###############",
+"#############
+#DcBa.#.GhKl#
+#.###@#@#I###
+#e#d#####j#k#
+###C#@#@###J#
+#fEbA.#.FgHi#
+#############",
+"#############
+#g#f.D#..h#l#
+#F###e#E###.#
+#dCba@#@BcIJ#
+#############
+#nK.L@#@G...#
+#M###N#H###.#
+#o#m..#i#jk.#
+#############",
 "#################################################################################
 #...#...............#...........#.......#.#...........#..z......#...K........r..#
 ###.#.#############.#.#.#######.#.###.#.#.#.#####.###.###.#######.#.#############
@@ -80,9 +82,9 @@ const INPUT: [&str; 6] = [
 #.#.#.###.#.###.###########.#######.#.#.#.###.#.###.#.###.###.#######.###.###.#.#
 #.#.#.#.#...#...#.#.......#...#.....#.#.#...#.#...#.#.#.#.#...#.........#.#...#.#
 #.###.#.#######.#.#.#.#######.#.#####.#.#.#.#####.#.#.#.#.#.###########.#.#.###.#
-#.........E.....#...#...........#.........#.......#....e#...............#...#...#
-#######################################.@.#######################################
-#.....#...#.........#...............#.........#...#.............#...#...#...#...#
+#.........E.....#...#...........#......@#@#.......#....e#...............#...#...#
+#################################################################################
+#.....#...#.........#...............#..@#@....#...#.............#...#...#...#...#
 #.###.#.#.#######.#.###.###########.###.#.#####.#.#.#.#########.#.#.#.#.#.#.###.#
 #.#.#...#.....#...#...#...#.....#.#.#...#.......#...#.....#.#...#.#...#.#.#.....#
 #.#.#########.#.#####.#.#.#.###.#.#.#.###.###############.#.#.###.#####.#.#####.#
@@ -563,7 +565,11 @@ impl Solver {
     }
 }
 
-pub fn parse_input(input: &str) -> (Map, Vec<(Loc, char)>, Vec<(Loc, char)>, Loc) {
+pub fn offset(loc: Loc, offset: Loc) -> Loc {
+    return (loc.0 - offset.0, loc.1 - offset.1);
+}
+
+pub fn parse_input(input: &str) -> Vec<(Map, Vec<(Loc, char)>, Vec<(Loc, char)>, Loc)> {
     let mut tiles = Vec::new();
     let mut keys = Vec::new();
     let mut doors = Vec::new();
@@ -571,7 +577,7 @@ pub fn parse_input(input: &str) -> (Map, Vec<(Loc, char)>, Vec<(Loc, char)>, Loc
     let mut x = 0;
     let mut y = 0;
 
-    let mut loc = (0, 0);
+    let mut locs = Vec::new();
 
     for line in input.split("\n") {
         let mut row = Vec::new();
@@ -588,7 +594,7 @@ pub fn parse_input(input: &str) -> (Map, Vec<(Loc, char)>, Vec<(Loc, char)>, Loc
 
                 '@' => {
                     row.push(Tile::Empty);
-                    loc = (x, y);
+                    locs.push((x, y));
                 }
 
                 'a'..='z' => {
@@ -614,23 +620,205 @@ pub fn parse_input(input: &str) -> (Map, Vec<(Loc, char)>, Vec<(Loc, char)>, Loc
         y += 1;
     }
 
-    return (Map { tiles, }, keys, doors, loc);
+    // for part 2, split the map into 4 parts, and return each part
+    let width = tiles[0].len();
+    let height = tiles.len();
+
+    let mut maps_to_solve = Vec::new();
+
+    // top left
+    let mut topleft_keys: Vec<(Loc, char)> = Vec::new();
+    for (key_loc, key_ch) in keys.iter() {
+        if key_loc.0 <= width / 2 && key_loc.1 <= height / 2 {
+            topleft_keys.push((*key_loc, *key_ch));
+        }
+    }
+    let mut topleft_doors: Vec<(Loc, char)>= Vec::new();
+    for door in doors.iter() {
+        if (door.0).0 <= width / 2 && (door.0).1 <= height / 2 {
+            if topleft_keys.iter().any(|(_, key_ch)| key_ch == &door.1.to_lowercase().next().unwrap()) {
+                topleft_doors.push(*door);
+            }
+        }
+    }
+    let mut topleft_loc = (1000, 1000);
+    for loc in locs.iter() {
+        if loc.0 <= width/2 && loc.1 <= height/2 {
+            topleft_loc = *loc;
+        }
+    }
+
+    let mut topleft_tiles = Vec::new();
+    for y in 0..=(height / 2) {
+        let mut row = Vec::new();
+
+        for x in 0..=(width / 2) {
+            row.push(tiles[y][x]);
+        }
+        row.push(Tile::Wall);
+        topleft_tiles.push(row);
+    }
+    let mut row = Vec::new();
+    for x in 0..=(width / 2) {
+        row.push(Tile::Wall);
+    }
+    row.push(Tile::Wall);
+    topleft_tiles.push(row);
+    maps_to_solve.push((Map { tiles: topleft_tiles }, topleft_keys, topleft_doors, topleft_loc));
+
+    // top right
+    let cur_offset = (width/2, 0);
+    let mut topright_keys: Vec<(Loc, char)> = Vec::new();
+    for (key_loc, key_ch) in keys.iter() {
+        if key_loc.0 >= width / 2 && key_loc.1 <= height / 2 {
+            topright_keys.push((offset(*key_loc, cur_offset), *key_ch));
+        }
+    }
+    let mut topright_doors: Vec<(Loc, char)>= Vec::new();
+    for door in doors.iter() {
+        if (door.0).0 >= width / 2 && (door.0).1 <= height / 2 {
+            if topright_keys.iter().any(|(_, key_ch)| key_ch == &door.1.to_lowercase().next().unwrap()) {
+                topright_doors.push((offset(door.0, cur_offset), door.1));
+            }
+        }
+    }
+    let mut topright_loc = (1000, 1000);
+    for loc in locs.iter() {
+        if loc.0 >= width/2 && loc.1 <= height/2 {
+            topright_loc = offset(*loc, cur_offset);
+        }
+    }
+
+    let mut topright_tiles = Vec::new();
+    for y in 0..=(height/2) {
+        let mut row = Vec::new();
+
+        for x in (width / 2)..width {
+            row.push(tiles[y][x]);
+        }
+        row.push(Tile::Wall);
+        topright_tiles.push(row);
+    }
+    let mut row = Vec::new();
+    for x in (width / 2)..width {
+        row.push(Tile::Wall);
+    }
+    row.push(Tile::Wall);
+    topright_tiles.push(row);
+    maps_to_solve.push((Map { tiles: topright_tiles }, topright_keys, topright_doors, topright_loc));
+
+
+    // bottom left
+    let cur_offset = (0, height/2);
+    let mut bottomleft_keys: Vec<(Loc, char)> = Vec::new();
+    for key in keys.iter() {
+        if (key.0).0 <= width / 2 && (key.0).1 >= height / 2 {
+            bottomleft_keys.push((offset(key.0, cur_offset), key.1));
+        }
+    }
+    let mut bottomleft_doors: Vec<(Loc, char)>= Vec::new();
+    for door in doors.iter() {
+        if (door.0).0 <= width / 2 && (door.0).1 >= height / 2 {
+            if bottomleft_keys.iter().any(|(_, key_ch)| key_ch == &door.1.to_lowercase().next().unwrap()) {
+                bottomleft_doors.push((offset(door.0, cur_offset), door.1));
+            }
+        }
+    }
+    let mut bottomleft_loc = (1000, 1000);
+    for loc in locs.iter() {
+        if loc.0 <= width/2 && loc.1 >= height/2 {
+            bottomleft_loc = offset(*loc, cur_offset);
+        }
+    }
+
+    let mut bottomleft_tiles = Vec::new();
+    for y in (height/2)..height {
+        let mut row = Vec::new();
+
+        for x in 0..=(width/2) {
+            row.push(tiles[y][x]);
+        }
+        row.push(Tile::Wall);
+        bottomleft_tiles.push(row);
+    }
+    let mut row = Vec::new();
+    for x in 0..=(width/2) {
+        row.push(Tile::Wall);
+    }
+    row.push(Tile::Wall);
+    bottomleft_tiles.push(row);
+    maps_to_solve.push((Map { tiles: bottomleft_tiles }, bottomleft_keys, bottomleft_doors, bottomleft_loc));
+
+
+    // bottom right
+    let cur_offset = (width/2, height/2);
+    let mut bottomright_keys: Vec<(Loc, char)> = Vec::new();
+    for key in keys.iter() {
+        if (key.0).0 >= width / 2 && (key.0).1 >= height / 2 {
+            bottomright_keys.push((offset(key.0, cur_offset), key.1));
+        }
+    }
+    let mut bottomright_doors: Vec<(Loc, char)>= Vec::new();
+    for door in doors.iter() {
+        if (door.0).0 >= width / 2 && (door.0).1 >= height / 2 {
+            if bottomright_keys.iter().any(|(_, key_ch)| key_ch == &door.1.to_lowercase().next().unwrap()) {
+                bottomright_doors.push((offset(door.0, cur_offset), door.1));
+            }
+        }
+    }
+    let mut bottomright_loc = (1000, 1000);
+    for loc in locs.iter() {
+        if loc.0 >= width/2 && loc.1 >= height/2 {
+            bottomright_loc = offset(*loc, cur_offset);
+        }
+    }
+
+    let mut bottomright_tiles = Vec::new();
+    for y in (height/2)..height {
+        let mut row = Vec::new();
+
+        for x in (width / 2)..width {
+            row.push(tiles[y][x]);
+        }
+        row.push(Tile::Wall);
+        bottomright_tiles.push(row);
+    }
+    let mut row = Vec::new();
+    for x in (width / 2)..width {
+        row.push(Tile::Wall);
+    }
+    row.push(Tile::Wall);
+    bottomright_tiles.push(row);
+    maps_to_solve.push((Map { tiles: bottomright_tiles }, bottomright_keys, bottomright_doors, bottomright_loc));
+
+    return maps_to_solve;
 }
 
 fn main() {
-    let (map, keys, doors, loc) = parse_input(INPUT[IX]);
+    let parts = parse_input(INPUT[IX]);
 
-    let initial_solution = 
-        Solution {
-            steps: 0,
-            loc,
-            collected: Vec::new(),
-            keys,
-            doors,
-            goal: None,
-    };
+    let mut cost = 0;
+    for (map, keys, doors, loc) in parts {
+        let initial_solution = 
+            Solution {
+                steps: 0,
+                loc,
+                collected: Vec::new(),
+                keys,
+                doors,
+                goal: None,
+        };
 
-    let mut solver = Solver::new(initial_solution, &map);
+        initial_solution.print(&map);
+        println!("");
+        println!("Starting solver");
 
-    println!("Min steps: {}", solver.solve(&map));
+        let mut solver = Solver::new(initial_solution, &map);
+
+        let cur_cost = solver.solve(&map);
+        println!("PART COST = {}", cur_cost);
+
+        cost += cur_cost;
+    }
+    println!("Min steps: {}", cost);
 }
