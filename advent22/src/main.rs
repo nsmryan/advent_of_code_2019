@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
+use std::collections::HashSet;
 
 
-const NUM_CARDS: usize = 10007;
+const NUM_CARDS: usize = 5596 + 10007; //119315717514047;
 
 const IX: usize = 4;
 
@@ -135,7 +136,7 @@ cut 7244
 increment 23"
 ];
 
-pub type Card = usize;
+pub type Card = u128;
 
 pub type Deck = VecDeque<Card>;
 
@@ -153,13 +154,14 @@ impl Instr {
                 //println!("Increment {}", inc_amount);
 
                 scratch.clear();
-                for ix in 0..NUM_CARDS {
+                for ix in 0..deck.len() {
                     scratch.push_back(0);
                 }
-                for ix in 0..NUM_CARDS {
+
+                for ix in 0..deck.len() {
                     let mut pos = ix as isize * inc_amount;
-                    let pos = pos as usize % NUM_CARDS;
-                    scratch[pos] = deck[ix];
+                    let pos = pos as u128 % deck.len() as u128;
+                    scratch[pos as usize] = deck[ix as usize];
                 }
 
                 for (ix, card) in scratch.iter().enumerate() {
@@ -268,22 +270,104 @@ pub fn test_incr() {
 fn main() {
     let instrs = parse_input(INPUT[IX]);
 
-    dbg!(&instrs);
+    let num_iters: u128 = 101741582076661;
+    let num_cards: u128 = 119315717514047;
+    let extra_cards = num_cards % 10007;
+    let repeats_after: u128 = 5003;
+    let remaining_iters = num_iters % repeats_after;
 
-    let mut deck = VecDeque::with_capacity(NUM_CARDS);
-    let mut scratch = VecDeque::with_capacity(NUM_CARDS);
-    for ix in 0..NUM_CARDS {
+    println!("repetitions = {}", num_iters / repeats_after);
+    println!("extra iters = {}", num_iters % repeats_after);
+    println!("extra cards = {}", num_cards % 10007);
+
+
+    let try_num_cards = 10007; // + extra_cards;
+    let mut deck = VecDeque::with_capacity(NUM_CARDS as usize);
+    let mut scratch = VecDeque::with_capacity(NUM_CARDS as usize);
+    for ix in 0..(try_num_cards as u128) {
         deck.push_back(ix);
     }
 
-    for instr in instrs {
-        //dbg!(&deck);
+    let mut left = HashSet::new();
+    for ix in 0..try_num_cards {
+        left.insert(ix);
+    }
+    let mut cycles: Vec<Vec<u128>> = Vec::new();
+
+    /*
+    for ix in 0..remaining_iters {
+        for instr in instrs.iter() {
+            instr.apply(&mut deck, &mut scratch);
+        }
+
+        if ix % 10 == 0 {
+            println!("ix = {}", ix);
+        }
+    }
+    println!("Card at 2020 = {}", deck[2020]);
+    return;
+    */
+
+    for instr in instrs.iter() {
         instr.apply(&mut deck, &mut scratch);
     }
 
-    dbg!(&deck);
+    let mut next_attempt = 0;
+    while left.len() > 0 {
+        while next_attempt < try_num_cards && !left.contains(&next_attempt) {
+            next_attempt += 1;
+        }
 
-    let card_pos = deck.iter().position(|card| *card == 2019).unwrap();
+        if next_attempt == try_num_cards {
+            break;
+        }
 
-    println!("Answer = {}", card_pos);
+        //println!("next attempt = {}", next_attempt);
+
+        let mut next_ix: u128 = next_attempt;
+        let mut cycle = Vec::new();
+        while left.contains(&next_ix) {
+            //println!("left = {}, cycle = {}", left.len(), cycle.len());
+            left.remove(&next_ix);
+            cycle.push(next_ix as u128);
+
+            //println!("deck len = {}, next_ix = {}", deck.len(), next_ix);
+            next_ix = deck.iter().position(|card| *card == next_ix).unwrap() as u128;
+        }
+        cycles.push(cycle);
+    }
+    for (ix, cycle) in cycles.iter().enumerate() {
+        println!("cycle[{}] = {}", ix, cycle.len());
+    }
+    return;
+
+    let mut iters = 0;
+    loop {
+        for instr in instrs.iter() {
+            instr.apply(&mut deck, &mut scratch);
+        }
+        iters += 1;
+
+        if deck.iter().enumerate().all(|(ix, card)| ix as u128 == *card) {
+            println!("iters = {}", iters);
+            break;
+        }
+    }
+
+    /*
+    for _ in 0..remaining_iters {
+        for instr in instrs.iter() {
+            //dbg!(&deck);
+            instr.apply(&mut deck, &mut scratch);
+        }
+    }
+
+    println!("Card at 2020 = {}", deck[2020]);
+    */
+
+    //dbg!(&deck);
+
+    //let card_pos = deck.iter().position(|card| *card == 2019).unwrap();
+
+    //println!("Answer = {}", card_pos);
 }
