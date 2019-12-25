@@ -431,27 +431,50 @@ fn main() {
         computers.push(cur_computer);
     }
 
+    let mut nat_ys = Vec::new();
+    let mut nat_xy = (0, 0);
+    let mut last_sent_y = 0;
+
     'outer: loop {
+        let mut any_packets = false;
+       
         for ix in 0..NUM_COMPUTERS {
             if computers[ix].input.len() == 0 {
                 computers[ix].input.push_front(-1);
+            } else {
+                any_packets = true;
             }
 
             computers[ix].run();
 
             while computers[ix].output.len() > 0 {
+
                 let address = computers[ix].output.pop_front().unwrap();
                 let x = computers[ix].output.pop_front().unwrap();
                 let y = computers[ix].output.pop_front().unwrap();
 
                 if address == 255 {
-                    println!("X = {}, Y = {}", x, y);
-                    break 'outer;
-                }
+                    println!("nat_ys.len() = {}", nat_ys.len());
 
-                computers[address as usize].input.push_back(x);
-                computers[address as usize].input.push_back(y);
+                    nat_xy = (x, y);
+                } else {
+                    computers[address as usize].input.push_back(x);
+                    computers[address as usize].input.push_back(y);
+                }
             }
         }
+
+        if !any_packets {
+            if nat_ys.contains(&nat_xy.1) {
+                break 'outer;
+            }
+
+            computers[0].input.push_back(nat_xy.0);
+            computers[0].input.push_back(nat_xy.1);
+            nat_ys.push(nat_xy.1);
+            last_sent_y = nat_xy.1;
+        }
     }
+
+    println!("y = {}", last_sent_y);
 }

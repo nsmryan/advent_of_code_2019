@@ -147,7 +147,32 @@ pub enum Instr {
     Cut(isize),
 }
 
+
 impl Instr {
+    pub fn unapply(self, loc: i128, num_cards: i128) -> i128 {
+        match self {
+            Instr::Incr(inc_amount) => {
+                //println!("Increment {}", inc_amount);
+
+                (loc * inc_amount as i128 % num_cards) 
+            }
+
+            Instr::NewStack => {
+                //println!("New Stack");
+                num_cards - loc - 1
+            }
+
+            Instr::Cut(cut_amount) => {
+                let cut_loc = loc + (-1 as i128 * cut_amount as i128);
+                if cut_loc < 0 {
+                    num_cards - cut_loc.abs()
+                } else {
+                    cut_loc % num_cards
+                }
+            }
+        }
+    }
+
     pub fn apply(self, deck: &mut Deck, scratch: &mut Deck) {
         match self {
             Instr::Incr(inc_amount) => {
@@ -229,9 +254,13 @@ pub fn test_new_stack() {
     for ix in 0..10 {
         deck.push_back(ix);
     }
+    let deck_initial = deck.clone();
 
     Instr::NewStack.apply(&mut deck, &mut scratch);
     assert_eq!(&deck, &[9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+
+    Instr::NewStack.apply(&mut deck, &mut scratch);
+    assert_eq!(&deck, &deck_initial);
 }
 
 #[test]
@@ -241,6 +270,7 @@ pub fn test_cut() {
     for ix in 0..10 {
         deck.push_back(ix);
     }
+    let deck_initial = deck.clone();
 
     Instr::Cut(3).apply(&mut deck, &mut scratch);
     assert_eq!(&deck, &[3, 4, 5, 6, 7, 8, 9, 0, 1, 2]);
@@ -251,8 +281,16 @@ pub fn test_cut() {
         deck.push_back(ix);
     }
 
+    let mut deck = deck_initial.clone();
     Instr::Cut(-3).apply(&mut deck, &mut scratch);
-    assert_eq!(&deck, &[6, 7, 8, 9, 0, 1, 2, 3, 4, 5]);
+    Instr::Cut(-3).apply(&mut deck, &mut scratch);
+
+    let two_cuts = deck.clone();
+
+    let mut deck = deck_initial.clone();
+    Instr::Cut(-6).apply(&mut deck, &mut scratch);
+
+    assert_eq!(&deck, &two_cuts);
 }
 
 #[test]
@@ -270,15 +308,72 @@ pub fn test_incr() {
 fn main() {
     let instrs = parse_input(INPUT[IX]);
 
+
     let num_iters: u128 = 101741582076661;
     let num_cards: u128 = 119315717514047;
     let extra_cards = num_cards % 10007;
     let repeats_after: u128 = 5003;
     let remaining_iters = num_iters % repeats_after;
 
-    println!("repetitions = {}", num_iters / repeats_after);
-    println!("extra iters = {}", num_iters % repeats_after);
-    println!("extra cards = {}", num_cards % 10007);
+    //println!("repetitions = {}", num_iters / repeats_after);
+    //println!("extra iters = {}", num_iters % repeats_after);
+    //println!("extra cards = {}", num_cards % 10007);
+
+    
+    /*
+    {
+        let num_cards = 10007;
+        let mut deck = VecDeque::with_capacity(num_cards as usize);
+        let mut scratch = VecDeque::with_capacity(num_cards as usize);
+        for ix in 0..(num_cards as u128) {
+            deck.push_back(ix);
+        }
+
+        for instr in instrs.iter() {
+            instr.apply(&mut deck, &mut scratch);
+        }
+
+        println!("start attempt");
+        let mut unapplied = Vec::new();
+        for ix in 0..num_cards {
+            let mut loc = deck[ix as usize] as i128;
+            for instr in instrs.iter() {
+                loc = instr.unapply(loc, num_cards as i128);
+            }
+            unapplied.push(loc);
+        }
+
+        println!("deck = {:?}", &deck);
+        println!("undeck = {:?}", &unapplied);
+    }
+    */
+
+    let mut loc = 2020;
+    let mut first = 0;
+    for iter in 0..num_iters {
+        for instr in instrs.iter() {
+            loc = instr.unapply(loc, num_cards as i128);
+        }
+
+        if iter < 5 {
+            println!("loc = {:9}", loc);
+        }
+
+        if loc < 0 {
+            loc = num_cards as i128 - loc;
+        }
+
+        if iter % 1000000 == 0 {
+            println!("iter = {}", iter);
+        }
+
+        if loc == 2020 {
+            println!("repeat at {}", iter);
+            break;
+        }
+    }
+    println!("Loc = {}", loc);
+    return;
 
 
     let try_num_cards = 10007; // + extra_cards;
@@ -293,20 +388,6 @@ fn main() {
         left.insert(ix);
     }
     let mut cycles: Vec<Vec<u128>> = Vec::new();
-
-    /*
-    for ix in 0..remaining_iters {
-        for instr in instrs.iter() {
-            instr.apply(&mut deck, &mut scratch);
-        }
-
-        if ix % 10 == 0 {
-            println!("ix = {}", ix);
-        }
-    }
-    println!("Card at 2020 = {}", deck[2020]);
-    return;
-    */
 
     for instr in instrs.iter() {
         instr.apply(&mut deck, &mut scratch);
@@ -339,35 +420,4 @@ fn main() {
     for (ix, cycle) in cycles.iter().enumerate() {
         println!("cycle[{}] = {}", ix, cycle.len());
     }
-    return;
-
-    let mut iters = 0;
-    loop {
-        for instr in instrs.iter() {
-            instr.apply(&mut deck, &mut scratch);
-        }
-        iters += 1;
-
-        if deck.iter().enumerate().all(|(ix, card)| ix as u128 == *card) {
-            println!("iters = {}", iters);
-            break;
-        }
-    }
-
-    /*
-    for _ in 0..remaining_iters {
-        for instr in instrs.iter() {
-            //dbg!(&deck);
-            instr.apply(&mut deck, &mut scratch);
-        }
-    }
-
-    println!("Card at 2020 = {}", deck[2020]);
-    */
-
-    //dbg!(&deck);
-
-    //let card_pos = deck.iter().position(|card| *card == 2019).unwrap();
-
-    //println!("Answer = {}", card_pos);
 }
