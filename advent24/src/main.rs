@@ -2,17 +2,17 @@ use std::collections::HashSet;
 use std::collections::HashMap;
 
 const INPUT: &str =
-"....#
-#..#.
-#..##
-..#..
-#....";
-
 //"....#
 //#..#.
-//##..#
-//#.###
-//.####";
+//#..##
+//..#..
+//#....";
+
+"....#
+#..#.
+##..#
+#.###
+.####";
 
 pub type Loc = (usize, usize);
 
@@ -162,7 +162,11 @@ pub fn step(maps: &Vec<Map>,
                 let mut sum = 0;
 
                 for (adj, depth) in adj_map.get(&(x, y)).expect("couldn't get position").iter() {
-                    //println!("{:?}, {}", adj, depth);
+                    /*
+                    if x == 0 && y == 2 && maps[map_ix].num_bugs() > 0 {
+                        println!("{:?}, {} -> {:?}", adj, depth, maps[map_ix].tiles[adj.1][adj.0]);
+                    }
+                    */
                     let map_offset = map_ix as isize + depth;
                     if maps[map_offset as usize].tiles[adj.1][adj.0] == Tile::Bug {
                         sum += 1;
@@ -271,7 +275,7 @@ fn main() {
 
     // bottom left corner 21
     let mut adj =
-        vec!(((0, 3), 0), ((1, 3), 0),
+        vec!(((0, 3), 0), ((1, 4), 0),
              ((2, 3), -1), ((1, 2), -1));
     adj_map.insert((0, 4), adj);
 
@@ -343,37 +347,39 @@ fn main() {
     let total_bugs: u32 = maps.iter().map(|map| map.num_bugs()).sum();
     println!("Total bugs = {}", total_bugs);
 
-    for ix in 0..1 {
-    //for ix in 0..200 {
+    //for ix in 0..2 {
+    //for ix in 0..10 {
+    for ix in 0..200 {
         println!("Running step {}", ix);
         maps = step(&maps, &adj_map);
 
         let total_bugs: u32 = maps.iter().map(|map| map.num_bugs()).sum();
         println!("Total bugs = {}", total_bugs);
-    }
 
-    maps[start - 5].print();
-    println!("____");
-    maps[start - 4].print();
-    println!("____");
-    maps[start - 3].print();
-    println!("____");
-    maps[start - 2].print();
-    println!("____");
-    maps[start - 1].print();
-    println!("____");
-    maps[start + 0].print();
-    println!("____");
-    maps[start + 1].print();
-    println!("____");
-    maps[start + 2].print();
-    println!("____");
-    maps[start + 3].print();
-    println!("____");
-    maps[start + 4].print();
-    println!("____");
-    maps[start + 5].print();
-    println!("____");
+        maps[start - 5].print();
+        println!("____");
+        maps[start - 4].print();
+        println!("____");
+        maps[start - 3].print();
+        println!("____");
+        maps[start - 2].print();
+        println!("____");
+        maps[start - 1].print();
+        println!("____");
+        maps[start + 0].print();
+        println!("____");
+        maps[start + 1].print();
+        println!("____");
+        maps[start + 2].print();
+        println!("____");
+        maps[start + 3].print();
+        println!("____");
+        maps[start + 4].print();
+        println!("____");
+        maps[start + 5].print();
+        println!("____");
+ 
+    }
 
     let total_bugs: u32 = maps.iter().map(|map| map.num_bugs()).sum();
     println!("Total bugs = {}", total_bugs);
