@@ -153,8 +153,6 @@ pub fn step(maps: &Vec<Map>,
     let mut next_maps = maps.clone();
 
     for map_ix in 1..(maps.len() - 1) {
-        let tiles = maps[map_ix].tiles.clone();
-
         for y in 0..height {
             for x in 0..width {
                 if y == 2 && x == 2 {
@@ -342,12 +340,17 @@ fn main() {
     let start = 201;
     maps[start] = map;
 
-    for ix in 0..10 {
+    let total_bugs: u32 = maps.iter().map(|map| map.num_bugs()).sum();
+    println!("Total bugs = {}", total_bugs);
+
+    for ix in 0..1 {
     //for ix in 0..200 {
         println!("Running step {}", ix);
         maps = step(&maps, &adj_map);
-    }
 
+        let total_bugs: u32 = maps.iter().map(|map| map.num_bugs()).sum();
+        println!("Total bugs = {}", total_bugs);
+    }
 
     maps[start - 5].print();
     println!("____");
