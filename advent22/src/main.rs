@@ -1,5 +1,15 @@
+use std::boxed::Box;
 use std::collections::VecDeque;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use modinverse::modinverse;
+use num::pow::pow;
+
+// cut c = p - c
+// new stack = N - p - 1
+// increment i = p * i
+
 
 // cut is the group Z
 // cut n; cut m = cut (n + m) = p + (n + m)
@@ -15,10 +25,13 @@ use std::collections::HashSet;
 // cut n; increment m = (N - m) * (p - ((N - m) * n))
 // increment m; cut n = ((N - m) * p) - n
 
-const NUM_CARDS: usize = 10007; //119315717514047;
+const NUM_CARDS: usize = 119315717514047;
+//const NUM_CARDS: usize = 10007;
+//const NUM_ITERS: u128 = 1;
 const NUM_ITERS: u128 = 101741582076661;
 
 const IX: usize = 4;
+
 
 const INPUT: [&str; 5] = [
 // 0 3 6 9 2 5 8 1 4 7
@@ -26,11 +39,17 @@ const INPUT: [&str; 5] = [
 new stack
 new stack",
 
+// (p + 6) * 7 * -1 + 10 + 1
+// -7 * p + 11
 // 3 0 7 4 1 8 5 2 9 6
 "cut 6
 increment 7
 new stack",
 
+// (p * 7) * 9 - 2
+// p * 3 + 2
+// 1 * 3 + 2 = 5
+// 5 * 3 + 2 = 7
 // 6 3 0 7 4 1 8 5 2 9
 "increment 7
 increment 9
@@ -150,9 +169,317 @@ cut 7244
 increment 23"
 ];
 
-pub type Card = i64;
+pub type Card = i128;
 
 pub type Deck = VecDeque<Card>;
+
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum Op {
+    Var,
+    Prim(Card),
+    Add(Box<Op>, Box<Op>),
+    Mult(Box<Op>, Box<Op>),
+}
+
+impl Op {
+    pub fn add(op1: Op, op2: Op) -> Op {
+        return Op::Add(Box::new(op1), Box::new(op2));
+    }
+
+    pub fn mult(op1: Op, op2: Op) -> Op {
+        return Op::Mult(Box::new(op1), Box::new(op2));
+    }
+
+    pub fn depth(&self) -> usize {
+        match self {
+            Op::Add(op1, op2) => {
+                let d1 = op1.depth();
+                let d2 = op2.depth();
+
+                return 1 + std::cmp::max(d1, d2);
+            }
+
+            Op::Mult(op1, op2) => {
+                let d1 = op1.depth();
+                let d2 = op2.depth();
+
+                return 1 + std::cmp::max(d1, d2);
+            }
+
+            Op::Prim(prim) => {
+                return 1;
+            }
+
+            Op::Var => {
+                return 1;
+            }
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Op::Add(op1, op2) => {
+                let d1 = op1.size();
+                let d2 = op2.size();
+
+                return 1 + d1 + d2;
+            }
+
+            Op::Mult(op1, op2) => {
+                let d1 = op1.size();
+                let d2 = op2.size();
+
+                return 1 + d1 + d2;
+            }
+
+            Op::Prim(prim) => {
+                return 1;
+            }
+
+            Op::Var => {
+                return 1;
+            }
+        }
+    }
+
+    pub fn simplify(&self) -> Op {
+        let mut new_op = self.clone();
+        let mut old_op = new_op.clone();
+
+        match self {
+            Op::Add(op1, op2) => {
+                let new_op1 = op1.simplify();
+                let new_op2 = op2.simplify();
+
+                new_op = Op::add(new_op1, new_op2);
+
+                if let Some(simplified) = new_op.simplify_op() {
+                    new_op = simplified;
+                }
+            }
+
+            Op::Mult(op1, op2) => {
+                let new_op1 = op1.simplify();
+                let new_op2 = op2.simplify();
+
+                new_op = Op::mult(new_op1, new_op2);
+
+                if let Some(simplified) = new_op.simplify_op() {
+                    new_op = simplified;
+                }
+            }
+
+            Op::Prim(prim) => {
+                return Op::Prim(*prim);
+            }
+
+            Op::Var => {
+                return Op::Var;
+            }
+        }
+
+        return new_op;
+    }
+
+    pub fn simplify_op(&self) -> Option<Op> {
+        match self.clone() {
+            Op::Prim(card) => {
+                return None;
+            }
+
+            Op::Add(op1, op2) => {
+                match (*op1.clone(), *op2.clone()) {
+                    (op, Op::Var) => {
+                        return Some(Op::add(Op::Var, op));
+                    }
+
+                    (Op::Prim(p1), Op::Prim(p2)) => {
+                        return Some(Op::Prim(p1 + p2));
+                    }
+
+                    (Op::Prim(p1), Op::Add(left, right)) => {
+                        match *left {
+                            Op::Prim(p2) => {
+                                return Some(Op::add(Op::Prim(p1 + p2), *right.clone()));
+                            }
+                            _ => {
+                                match *right {
+                                    Op::Prim(p2) => {
+                                        return Some(Op::add(Op::Prim(p1 + p2), *left.clone()));
+                                    }
+                                    _ => return None,
+                                }
+                            }
+                        }
+                    }
+
+                    (Op::Add(left, right), Op::Prim(p1)) => {
+                        match *left {
+                            Op::Prim(p2) => {
+                                return Some(Op::add(Op::Prim(p1 + p2), *right.clone()));
+                            }
+                            _ => {
+                                match *right {
+                                    Op::Prim(p2) => {
+                                        return Some(Op::add(Op::Prim(p1 + p2), *left.clone()));
+                                    }
+                                    _ => return None,
+                                }
+                            }
+                        }
+                    }
+
+                    _ => {
+                        return None;
+                    }
+                }
+            }
+
+            Op::Mult(op1, op2) => {
+                match (*op1.clone(), *op2.clone()) {
+                    (op, Op::Var) => {
+                        return Some(Op::Mult(Box::new(Op::Var), Box::new(op)));
+                    }
+
+                    (Op::Prim(p1), Op::Prim(p2)) => {
+                        return Some(Op::Prim(p1 * p2));
+                    }
+
+                    (Op::Prim(p), Op::Add(left, right)) => {
+                        return Some(Op::add(left.scale(p), right.scale(p)));
+                    }
+
+                    (Op::Add(left, right), Op::Prim(p)) => {
+                        return Some(Op::add(left.scale(p), right.scale(p)));
+                    }
+
+                    _ => {
+                        return None;
+                    }
+                }
+            }
+
+            Op::Var => {
+                return None;
+            }
+        }
+    }
+
+    pub fn scale(&self, prim: Card) -> Op {
+        match self.clone() {
+            Op::Prim(card) => {
+                return Op::Prim(modulus(card * prim, NUM_CARDS as Card));
+            }
+
+            Op::Add(op1, op2) => {
+                return Op::add(op1.scale(prim), op2.scale(prim));
+            }
+
+            Op::Mult(op1, op2) => {
+                return Op::mult(*op1, op2.scale(prim));
+            }
+
+            Op::Var => {
+                return Op::mult(Op::Var, Op::Prim(prim));
+            }
+        }
+    }
+
+    pub fn eval(&self, prim: Card) -> Card {
+        match self {
+            Op::Prim(card) => {
+                return *card;
+            }
+
+            Op::Add(op1, op2) => {
+                return modulus((op1.eval(prim) + op2.eval(prim)), NUM_CARDS as Card);
+            }
+
+            Op::Mult(op1, op2) => {
+                return modulus((op1.eval(prim) * op2.eval(prim)), NUM_CARDS as Card);
+            }
+
+            Op::Var => {
+                return prim;
+            }
+        }
+    }
+
+    pub fn substitute(&self, other: &Op) -> Op {
+        match self {
+            Op::Prim(card) => {
+                return self.clone();
+            }
+
+            Op::Add(op1, op2) => {
+                return Op::add(op1.substitute(other), op2.substitute(other));
+            }
+
+            Op::Mult(op1, op2) => {
+                return Op::mult(op1.substitute(other), op2.substitute(other));
+            }
+
+            Op::Var => {
+                return other.clone();
+            }
+        }
+    }
+
+    pub fn print(&self) {
+        self.print_helper();
+        println!("");
+    }
+
+    fn print_helper(&self) {
+        match self {
+            Op::Prim(card) => {
+                print!("{}", card);
+            }
+
+            Op::Add(op1, op2) => {
+                print!("(+ ");
+                op1.print_helper();
+                print!(" ");
+                op2.print_helper();
+                print!(")");
+            }
+
+            Op::Mult(op1, op2) => {
+                print!("(* ");
+                op1.print_helper();
+                print!(" ");
+                op2.print_helper();
+                print!(")");
+            }
+
+            Op::Var => {
+                print!("x");
+            }
+        }
+    }
+}
+
+#[test]
+pub fn test_simplify() {
+    let expr = Op::add(Op::Var, Op::Prim(2));
+    assert_eq!(expr, expr.simplify());
+
+    let expr = Op::add(Op::Prim(3), Op::Prim(2));
+    assert_eq!(Op::Prim(5), expr.simplify());
+
+    let expr = Op::mult(Op::Prim(3), Op::Prim(2));
+    assert_eq!(Op::Prim(6), expr.simplify());
+
+    let expr = Op::mult(Op::Prim(3), Op::Var);
+    assert_eq!(Op::mult(Op::Var, Op::Prim(3)), expr.simplify());
+
+    let expr = Op::mult(Op::Prim(3), Op::add(Op::Prim(4), Op::Prim(5)));
+    assert_eq!(Op::Prim(27), expr.simplify());
+
+    let expr = Op::mult(Op::Prim(3), Op::add(Op::Var, Op::Prim(5)));
+    assert_eq!(Op::add(Op::mult(Op::Var, Op::Prim(3)), Op::Prim(15)), expr.simplify());
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Shuffle {
@@ -370,6 +697,35 @@ impl Instr {
     }
 }
 
+pub fn parse_input_as_ops(input: &str) -> Op {
+    let mut op = Op::Var;
+
+    for line in input.split("\n") {
+        if line.starts_with("increment") {
+            let mut inc_line = line.split(" ");
+            inc_line.next();
+            let inc_amount = inc_line.next().unwrap().parse::<Card>().unwrap();
+
+            op = Op::Mult(Box::new(Op::Prim(inc_amount)), Box::new(op));
+
+        } else if line.starts_with("cut") {
+            let mut cut_line = line.split(" ");
+            cut_line.next();
+            let cut_amount = cut_line.next().unwrap().parse::<Card>().unwrap();
+
+            op = Op::Add(Box::new(Op::Prim(NUM_CARDS as Card - cut_amount)), Box::new(op));
+
+        } else if line.starts_with("new stack") {
+            op = Op::add(Op::Prim(NUM_CARDS as Card - 1), Op::mult(Op::Prim(-1), op));
+
+        } else {
+            panic!(format!("Unexpected line '{}'", line));
+        }
+    }
+
+    return op;
+}
+
 pub fn parse_input(input: &str) -> Vec<Instr> {
     let mut instr = Vec::new();
 
@@ -502,47 +858,83 @@ pub fn test_incr_invert() {
 }
 
 fn main() {
-    let mut instrs = parse_input(INPUT[IX]);
+    let orig_op = parse_input_as_ops(INPUT[IX]);
 
-    let mut any_change = true;
-    while any_change {
-        any_change = false;
+    println!("Original op(10) = {}", orig_op.eval(10));
 
-        for ix in 0..(instrs.len() - 1) {
-            match (instrs[ix], instrs[ix + 1]) {
-                (Instr::NewStack, Instr::NewStack) => {
-                    instrs.remove(ix);
-                    instrs.remove(ix);
-                    any_change = true;
-                    break;
-                }
+    orig_op.print();
+    println!("Original size = {}", orig_op.size());
+    let op = orig_op.simplify();
+    op.print();
+    println!("Final size = {}", op.size());
 
-                (Instr::NewStack, Instr::Incr(incr)) => {
-                    instrs[ix] = Instr::Incr(NUM_CARDS as Card - incr);
-                    instrs[ix+1] = Instr::NewStack;
-                    any_change = true;
-                    break;
-                }
+    assert_eq!(orig_op.eval(1), op.eval(1));
+    assert_eq!(orig_op.eval(10), op.eval(10));
+    assert_eq!(orig_op.eval(10000), op.eval(10000));
+    assert_eq!(orig_op.eval(0), op.eval(0));
+    assert_eq!(orig_op.eval(2), op.eval(2));
 
-                (Instr::NewStack, Instr::Cut(cut)) => {
-                    instrs[ix] = Instr::Cut(-1 * cut);
-                    instrs[ix+1] = Instr::NewStack;
-                    any_change = true;
-                    break;
-                }
+    let answer = op.eval(2019);
+    println!("Answer = {}", answer);
+    //let add = 7389;
+    //let mult = 1688;
 
-                _ => { }
-            }
+    let add: Card = 109167937990320;
+    let mult: Card = 35481670129518;
+
+    let card_pos = 2020;
+    //let card_pos = 3074;
+
+    let unadd = NUM_CARDS as Card - add;
+    let unmult = modinverse(mult, NUM_CARDS as Card).unwrap();
+
+    println!("unmult = {}", unmult);
+    println!("mult * unmult = {}", modulus(mult * unmult, NUM_CARDS as Card));
+
+    assert_eq!(card_pos, modulus((op.eval(card_pos) + unadd) * unmult, NUM_CARDS as Card));
+    let twice = op.eval(op.eval(card_pos));
+    let unonce = modulus((twice + unadd) * unmult, NUM_CARDS as Card);
+    let untwice = modulus((unonce + unadd) * unmult, NUM_CARDS as Card);
+    assert_eq!(card_pos, untwice);
+
+    let unop = Op::mult(Op::add(Op::Var, Op::Prim(unadd)), Op::Prim(unmult));
+
+    println!("Substitutions");
+    let chunk_size = 1000000;
+    let mut subs = Op::Var;
+    let mut test_val = card_pos;
+    for ix in 0..chunk_size {
+        test_val = op.eval(test_val);
+        subs = subs.substitute(&unop);
+        subs = subs.simplify();
+    }
+    assert_eq!(card_pos, subs.eval(test_val));
+    subs = subs.simplify();
+    assert_eq!(card_pos, subs.eval(test_val));
+    dbg!(&subs);
+
+    assert_eq!(card_pos, unop.eval(op.eval(card_pos)));
+    assert_eq!(card_pos, unop.eval(unop.eval(op.eval(op.eval(card_pos)))));
+
+    println!("Start main loop");
+    let mut val = card_pos;
+    let mut remaining_iters = NUM_ITERS;
+    let mut exec_iters: u128 = 0;
+    while remaining_iters > 0 {
+        if exec_iters % 1000000000000 == 0 {
+            println!("Ix = {} trillions", exec_iters / 1000000000000);
+        }
+
+        if remaining_iters > chunk_size {
+            val = subs.eval(val);
+            remaining_iters -= chunk_size;
+            exec_iters += chunk_size;
+        } else {
+            val = unop.eval(val);
+            remaining_iters -= 1;
+            exec_iters += 1;
         }
     }
 
-    let mut shuffle = Shuffle::id(NUM_CARDS);
-    for instr in instrs.iter() {
-        shuffle = shuffle.combine(&Shuffle::from_instr(NUM_CARDS, instr));
-    }
-
-    dbg!(shuffle);
-
-    println!("Answer? {}", shuffle.apply(2019));
-    println!("Answer? {}", shuffle.apply(3074));
+    println!("Answer = {}", val);
 }
